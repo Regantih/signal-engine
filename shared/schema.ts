@@ -1,0 +1,136 @@
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+// Domain types for cross-domain scoring
+export const DOMAINS = ["public_markets", "vc_themes", "content_brand", "side_business"] as const;
+export type Domain = typeof DOMAINS[number];
+
+export const DOMAIN_LABELS: Record<Domain, string> = {
+  public_markets: "Public Markets",
+  vc_themes: "VC Themes",
+  content_brand: "Content / Brand",
+  side_business: "Side Business",
+};
+
+// Signal weights configuration
+export const DEFAULT_WEIGHTS = {
+  momentum: 0.20,
+  mean_reversion: 0.15,
+  quality: 0.25,
+  flow: 0.15,
+  risk: 0.15,
+  crowding: 0.10,
+};
+
+// Opportunities table - the core entity
+export const opportunities = sqliteTable("opportunities", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  ticker: text("ticker"), // for public markets
+  domain: text("domain").notNull(), // public_markets | vc_themes | content_brand | side_business
+  description: text("description"),
+  
+  // Raw signal inputs (0-100 scale)
+  momentum: real("momentum").notNull().default(50),
+  meanReversion: real("mean_reversion").notNull().default(50),
+  quality: real("quality").notNull().default(50),
+  flow: real("flow").notNull().default(50),
+  risk: real("risk").notNull().default(50),
+  crowding: real("crowding").notNull().default(50),
+  
+  // Computed scores
+  compositeScore: real("composite_score"),
+  probabilityOfSuccess: real("probability_of_success"),
+  expectedEdge: real("expected_edge"),
+  kellyFraction: real("kelly_fraction"),
+  convictionBand: text("conviction_band"), // "high" | "medium" | "low" | "avoid"
+  
+  // Position sizing ($100 budget)
+  suggestedAllocation: real("suggested_allocation"),
+  entryPrice: real("entry_price"),
+  targetPrice: real("target_price"),
+  stopLoss: real("stop_loss"),
+  
+  // Status
+  status: text("status").notNull().default("watch"), // watch | buy | sell | closed
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Predictions table - immutable audit trail
+export const predictions = sqliteTable("predictions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  opportunityId: integer("opportunity_id").notNull(),
+  action: text("action").notNull(), // "BUY" | "SELL" | "WATCH" | "CLOSE"
+  compositeScore: real("composite_score").notNull(),
+  probabilityOfSuccess: real("probability_of_success").notNull(),
+  expectedEdge: real("expected_edge").notNull(),
+  kellyFraction: real("kelly_fraction").notNull(),
+  convictionBand: text("conviction_band").notNull(),
+  suggestedAllocation: real("suggested_allocation").notNull(),
+  entryPrice: real("entry_price"),
+  targetPrice: real("target_price"),
+  stopLoss: real("stop_loss"),
+  currentPrice: real("current_price"),
+  reasoning: text("reasoning"),
+  signalSnapshot: text("signal_snapshot").notNull(), // JSON of all signal values at time of prediction
+  timestamp: text("timestamp").notNull(), // ISO string - immutable audit
+});
+
+// Performance tracking
+export const performance = sqliteTable("performance", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  opportunityId: integer("opportunity_id").notNull(),
+  predictionId: integer("prediction_id").notNull(),
+  entryPrice: real("entry_price").notNull(),
+  currentPrice: real("current_price").notNull(),
+  pnl: real("pnl").notNull(),
+  pnlPercent: real("pnl_percent").notNull(),
+  holdingDays: integer("holding_days").notNull(),
+  status: text("status").notNull(), // "open" | "closed_win" | "closed_loss"
+  closedAt: text("closed_at"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Weight configuration (user-adjustable)
+export const weightConfig = sqliteTable("weight_config", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  domain: text("domain").notNull(),
+  momentum: real("momentum").notNull().default(0.20),
+  meanReversion: real("mean_reversion").notNull().default(0.15),
+  quality: real("quality").notNull().default(0.25),
+  flow: real("flow").notNull().default(0.15),
+  risk: real("risk").notNull().default(0.15),
+  crowding: real("crowding").notNull().default(0.10),
+});
+
+// Portfolio summary
+export const portfolio = sqliteTable("portfolio", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  totalBudget: real("total_budget").notNull().default(100),
+  allocatedAmount: real("allocated_amount").notNull().default(0),
+  cashRemaining: real("cash_remaining").notNull().default(100),
+  totalPnl: real("total_pnl").notNull().default(0),
+  totalPnlPercent: real("total_pnl_percent").notNull().default(0),
+  winRate: real("win_rate").notNull().default(0),
+  totalTrades: integer("total_trades").notNull().default(0),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Insert schemas
+export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, compositeScore: true, probabilityOfSuccess: true, expectedEdge: true, kellyFraction: true, convictionBand: true, suggestedAllocation: true });
+export const insertPredictionSchema = createInsertSchema(predictions).omit({ id: true });
+export const insertPerformanceSchema = createInsertSchema(performance).omit({ id: true });
+export const insertWeightConfigSchema = createInsertSchema(weightConfig).omit({ id: true });
+
+// Types
+export type Opportunity = typeof opportunities.$inferSelect;
+export type InsertOpportunity = z.infer<typeof insertOpportunitySchema>;
+export type Prediction = typeof predictions.$inferSelect;
+export type InsertPrediction = z.infer<typeof insertPredictionSchema>;
+export type Performance = typeof performance.$inferSelect;
+export type InsertPerformance = z.infer<typeof insertPerformanceSchema>;
+export type WeightConfig = typeof weightConfig.$inferSelect;
+export type InsertWeightConfig = z.infer<typeof insertWeightConfigSchema>;
+export type Portfolio = typeof portfolio.$inferSelect;
