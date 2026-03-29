@@ -10,6 +10,8 @@ import {
   Moon,
   Activity,
   LineChart,
+  Newspaper,
+  Sliders,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -17,9 +19,11 @@ const NAV_ITEMS = [
   { path: "/market", label: "Live Market", icon: LineChart },
   { path: "/opportunities", label: "Opportunities", icon: Target },
   { path: "/scoring", label: "Live Scoring", icon: Activity },
+  { path: "/news", label: "News", icon: Newspaper },
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
   { path: "/weights", label: "Weights", icon: Settings },
+  { path: "/settings", label: "Settings", icon: Sliders },
 ];
 
 export function AppSidebar() {

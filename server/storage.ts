@@ -7,6 +7,8 @@ import {
   type MarketData, type InsertMarketData, marketData,
   type WebhookAlert, type InsertWebhookAlert, webhookAlerts,
   type PublishedPrediction, type InsertPublishedPrediction, publishedPredictions,
+  type BenzingaNews, type InsertBenzingaNews, benzingaNews,
+  type AppSetting, type InsertAppSetting, appSettings,
   DEFAULT_WEIGHTS, DOMAINS,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -132,6 +134,30 @@ sqlite.exec(`
     post_content TEXT NOT NULL,
     published_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS benzinga_news (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    benzinga_id TEXT NOT NULL,
+    ticker TEXT,
+    title TEXT NOT NULL,
+    body TEXT,
+    url TEXT,
+    author TEXT,
+    source TEXT,
+    channels TEXT,
+    tags TEXT,
+    sentiment REAL,
+    is_wiim INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // Seed default weights if empty
@@ -205,6 +231,16 @@ export interface IStorage {
   // Published Predictions
   createPublishedPrediction(pub: InsertPublishedPrediction): Promise<PublishedPrediction>;
   getPublishedPredictions(): Promise<PublishedPrediction[]>;
+
+  // Benzinga News
+  getBenzingaNews(ticker?: string, limit?: number): Promise<BenzingaNews[]>;
+  saveBenzingaNews(news: InsertBenzingaNews): Promise<BenzingaNews>;
+  getNewsForTicker(ticker: string, limit?: number): Promise<BenzingaNews[]>;
+
+  // App Settings
+  getSetting(key: string): Promise<AppSetting | undefined>;
+  upsertSetting(key: string, value: string): Promise<AppSetting>;
+  getAllSettings(): Promise<AppSetting[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -334,6 +370,55 @@ export class DatabaseStorage implements IStorage {
 
   async getPublishedPredictions(): Promise<PublishedPrediction[]> {
     return db.select().from(publishedPredictions).orderBy(desc(publishedPredictions.publishedAt)).all();
+  }
+
+  // Benzinga News
+  async getBenzingaNews(ticker?: string, limit = 50): Promise<BenzingaNews[]> {
+    if (ticker) {
+      return db.select().from(benzingaNews)
+        .where(eq(benzingaNews.ticker, ticker.toUpperCase()))
+        .orderBy(desc(benzingaNews.publishedAt))
+        .limit(limit)
+        .all();
+    }
+    return db.select().from(benzingaNews)
+      .orderBy(desc(benzingaNews.publishedAt))
+      .limit(limit)
+      .all();
+  }
+
+  async saveBenzingaNews(news: InsertBenzingaNews): Promise<BenzingaNews> {
+    return db.insert(benzingaNews).values(news).returning().get();
+  }
+
+  async getNewsForTicker(ticker: string, limit = 20): Promise<BenzingaNews[]> {
+    return db.select().from(benzingaNews)
+      .where(eq(benzingaNews.ticker, ticker.toUpperCase()))
+      .orderBy(desc(benzingaNews.publishedAt))
+      .limit(limit)
+      .all();
+  }
+
+  // App Settings
+  async getSetting(key: string): Promise<AppSetting | undefined> {
+    return db.select().from(appSettings).where(eq(appSettings.key, key)).get();
+  }
+
+  async upsertSetting(key: string, value: string): Promise<AppSetting> {
+    const now = new Date().toISOString();
+    const existing = db.select().from(appSettings).where(eq(appSettings.key, key)).get();
+    if (existing) {
+      return db.update(appSettings)
+        .set({ value, updatedAt: now })
+        .where(eq(appSettings.key, key))
+        .returning()
+        .get()!;
+    }
+    return db.insert(appSettings).values({ key, value, updatedAt: now }).returning().get();
+  }
+
+  async getAllSettings(): Promise<AppSetting[]> {
+    return db.select().from(appSettings).all();
   }
 }
 

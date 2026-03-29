@@ -14,6 +14,8 @@ import Audit from "@/pages/audit";
 import PerformancePage from "@/pages/performance-page";
 import Weights from "@/pages/weights";
 import Market from "@/pages/market";
+import News from "@/pages/news";
+import SettingsPage from "@/pages/settings-page";
 
 function AppRouter() {
   return (
@@ -25,6 +27,8 @@ function AppRouter() {
       <Route path="/performance" component={PerformancePage} />
       <Route path="/weights" component={Weights} />
       <Route path="/market" component={Market} />
+      <Route path="/news" component={News} />
+      <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

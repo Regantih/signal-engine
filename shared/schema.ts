@@ -152,6 +152,32 @@ export const publishedPredictions = sqliteTable("published_predictions", {
   publishedAt: text("published_at").notNull(),
 });
 
+// Benzinga news cache
+export const benzingaNews = sqliteTable("benzinga_news", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  benzingaId: text("benzinga_id").notNull(),
+  ticker: text("ticker"),
+  title: text("title").notNull(),
+  body: text("body"), // teaser or full body
+  url: text("url"),
+  author: text("author"),
+  source: text("source"),
+  channels: text("channels"), // JSON array of channels/categories
+  tags: text("tags"), // JSON array
+  sentiment: real("sentiment"), // -1 to 1 computed sentiment
+  isWiim: integer("is_wiim").notNull().default(0), // WIIM = Why Is It Moving
+  publishedAt: text("published_at").notNull(),
+  fetchedAt: text("fetched_at").notNull(),
+});
+
+// App settings (key-value store for API keys etc)
+export const appSettings = sqliteTable("app_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 // Insert schemas
 export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, compositeScore: true, probabilityOfSuccess: true, expectedEdge: true, kellyFraction: true, convictionBand: true, suggestedAllocation: true });
 export const insertPredictionSchema = createInsertSchema(predictions).omit({ id: true });
@@ -160,6 +186,8 @@ export const insertWeightConfigSchema = createInsertSchema(weightConfig).omit({ 
 export const insertMarketDataSchema = createInsertSchema(marketData).omit({ id: true });
 export const insertWebhookAlertSchema = createInsertSchema(webhookAlerts).omit({ id: true });
 export const insertPublishedPredictionSchema = createInsertSchema(publishedPredictions).omit({ id: true });
+export const insertBenzingaNewsSchema = createInsertSchema(benzingaNews).omit({ id: true });
+export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true });
 
 // Types
 export type Opportunity = typeof opportunities.$inferSelect;
@@ -177,3 +205,7 @@ export type WebhookAlert = typeof webhookAlerts.$inferSelect;
 export type InsertWebhookAlert = z.infer<typeof insertWebhookAlertSchema>;
 export type PublishedPrediction = typeof publishedPredictions.$inferSelect;
 export type InsertPublishedPrediction = z.infer<typeof insertPublishedPredictionSchema>;
+export type BenzingaNews = typeof benzingaNews.$inferSelect;
+export type InsertBenzingaNews = z.infer<typeof insertBenzingaNewsSchema>;
+export type AppSetting = typeof appSettings.$inferSelect;
+export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;

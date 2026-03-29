@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
+import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -699,6 +700,86 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
+  });
+
+  // ========================
+  // BENZINGA NEWS
+  // ========================
+
+  app.get("/api/benzinga/news", async (req, res) => {
+    try {
+      const ticker = req.query.ticker as string | undefined;
+      const refresh = req.query.refresh === "true";
+
+      if (refresh) {
+        // Get tickers to refresh — either specified or all tracked tickers
+        let tickers: string[] = [];
+        if (ticker) {
+          tickers = [ticker.toUpperCase()];
+        } else {
+          const opps = await storage.getOpportunities();
+          tickers = [...new Set(opps.filter(o => o.ticker).map(o => o.ticker!.toUpperCase()))];
+        }
+        if (tickers.length > 0) {
+          await fetchBenzingaNews(tickers);
+        }
+      }
+
+      const news = await storage.getBenzingaNews(
+        ticker?.toUpperCase(),
+        Number(req.query.limit) || 50
+      );
+
+      res.json({ news, count: news.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/benzinga/sentiment/:ticker", async (req, res) => {
+    try {
+      const result = await getNewsSentimentScore(req.params.ticker);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // SETTINGS
+  // ========================
+
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const settings = await storage.getAllSettings();
+      // Mask API keys for security
+      const masked = settings.map(s => ({
+        ...s,
+        value: s.key.includes("api_key") && s.value.length > 8
+          ? s.value.slice(0, 4) + "..." + s.value.slice(-4)
+          : s.value,
+        rawLength: s.value.length,
+      }));
+      res.json(masked);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/settings", async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      if (!key || value === undefined) return res.status(400).json({ error: "key and value required" });
+      const setting = await storage.upsertSetting(key, value);
+      res.json(setting);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/benzinga/status", async (_req, res) => {
+    // Always connected — we use public Benzinga pages
+    res.json({ connected: true, keyConfigured: true, source: "public" });
   });
 
   return httpServer;
