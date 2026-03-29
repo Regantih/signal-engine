@@ -11,6 +11,13 @@ import {
   BarChart3,
   RefreshCw,
   Activity,
+  Bitcoin,
+  Gem,
+  Landmark,
+  FlaskConical,
+  ExternalLink,
+  Users,
+  Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +54,50 @@ interface MacroSnapshot {
   };
   computedAt: string;
   summary: string;
+}
+
+interface CryptoSnapshot {
+  btc: { price: number; change: number };
+  eth: { price: number; change: number };
+  sol: { price: number; change: number };
+  sentiment: string;
+}
+
+interface CommoditiesSnapshot {
+  gold: { price: number; change: number };
+  oil: { price: number; change: number };
+  silver: { price: number; change: number };
+  naturalGas: { price: number; change: number };
+}
+
+interface CongressionalTrade {
+  politician: string;
+  ticker: string;
+  type: string;
+  amount: string;
+  date: string;
+}
+
+interface PolymarketEvent {
+  title: string;
+  probability: number;
+  volume: string;
+  category: string;
+  url: string;
+}
+
+interface SentimentSnapshot {
+  overall: string;
+  details: string;
+}
+
+interface IntelligenceSnapshot {
+  crypto: CryptoSnapshot;
+  commodities: CommoditiesSnapshot;
+  congressionalTrades: CongressionalTrade[];
+  polymarket: PolymarketEvent[];
+  sentiment: SentimentSnapshot;
+  fetchedAt: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,6 +145,12 @@ function formatPrice(value: number, decimals = 2): string {
   if (value === 0) return "—";
   if (value >= 10000) return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
   return value.toFixed(decimals);
+}
+
+function formatCryptoPrice(value: number): string {
+  if (value === 0) return "—";
+  if (value >= 1000) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `$${value.toFixed(2)}`;
 }
 
 function ChangeIndicator({ change }: { change: number }) {
@@ -213,6 +270,86 @@ function SkeletonCard() {
   );
 }
 
+// ── Intelligence Sub-components ───────────────────────────────────────────────
+
+interface SimpleAssetCardProps {
+  label: string;
+  price: number;
+  change: number;
+  icon: React.ComponentType<{ className?: string }>;
+  formatFn?: (v: number) => string;
+  testId: string;
+}
+
+function SimpleAssetCard({ label, price, change, icon: Icon, formatFn, testId }: SimpleAssetCardProps) {
+  const isUp = change >= 0;
+  const displayPrice = formatFn ? formatFn(price) : formatCryptoPrice(price);
+  return (
+    <Card
+      className="bg-card/60 border-border/50 hover:bg-card/80 transition-colors"
+      data-testid={testId}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+            {label}
+          </span>
+          <Icon className="w-4 h-4 text-muted-foreground/60" />
+        </div>
+        <div className="text-xl font-bold text-foreground font-mono">
+          {price === 0 ? "—" : displayPrice}
+        </div>
+        <div className="mt-1 flex items-center gap-1">
+          {isUp ? (
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+          ) : (
+            <TrendingDown className="w-3.5 h-3.5 text-red-400" />
+          )}
+          <span className={`text-sm font-medium ${isUp ? "text-emerald-400" : "text-red-400"}`}>
+            {formatChange(change)}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProbabilityBar({ probability }: { probability: number }) {
+  const color =
+    probability >= 70
+      ? "bg-emerald-500"
+      : probability >= 40
+      ? "bg-amber-500"
+      : "bg-red-500";
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      <div className="flex-1 h-1.5 bg-muted/40 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${color} transition-all`}
+          style={{ width: `${Math.min(100, Math.max(0, probability))}%` }}
+        />
+      </div>
+      <span className={`text-xs font-bold font-mono w-8 text-right ${
+        probability >= 70 ? "text-emerald-400" : probability >= 40 ? "text-amber-400" : "text-red-400"
+      }`}>
+        {probability}%
+      </span>
+    </div>
+  );
+}
+
+function SentimentBadge({ overall }: { overall: string }) {
+  if (overall === "bullish") return (
+    <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Bullish</Badge>
+  );
+  if (overall === "bearish") return (
+    <Badge className="bg-red-500/20 text-red-400 border border-red-500/30">Bearish</Badge>
+  );
+  return (
+    <Badge className="bg-slate-500/20 text-slate-400 border border-slate-500/30">Neutral</Badge>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MacroPage() {
@@ -227,13 +364,26 @@ export default function MacroPage() {
     staleTime: 60_000,
   });
 
+  const {
+    data: intelData,
+    isLoading: intelLoading,
+    isFetching: intelFetching,
+  } = useQuery<IntelligenceSnapshot>({
+    queryKey: ["/api/intelligence"],
+    queryFn: () => apiRequest("GET", "/api/intelligence"),
+    staleTime: 120_000,
+  });
+
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["/api/macro"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/intelligence"] });
   }
 
   const regime = snapshot?.regime ?? "NEUTRAL";
   const cfg = REGIME_CONFIG[regime];
   const RegimeIcon = cfg.icon;
+
+  const anyFetching = isFetching || intelFetching;
 
   return (
     <div className="p-6 space-y-6 min-h-screen">
@@ -242,7 +392,7 @@ export default function MacroPage() {
         <div className="flex items-center gap-3">
           <Globe className="w-6 h-6 text-primary" />
           <div>
-            <h1 className="text-xl font-bold">Macro Environment</h1>
+            <h1 className="text-xl font-bold">Market Intelligence</h1>
             <p className="text-sm text-muted-foreground">
               Global market context · Updated{" "}
               {snapshot?.computedAt
@@ -255,12 +405,12 @@ export default function MacroPage() {
           variant="outline"
           size="sm"
           onClick={handleRefresh}
-          disabled={isFetching}
+          disabled={anyFetching}
           data-testid="button-refresh-macro"
           className="gap-2"
         >
-          <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-          Refresh
+          <RefreshCw className={`w-4 h-4 ${anyFetching ? "animate-spin" : ""}`} />
+          Refresh All
         </Button>
       </div>
 
@@ -444,6 +594,279 @@ export default function MacroPage() {
             </Card>
           ) : null}
         </div>
+      </div>
+
+      {/* ── INTELLIGENCE LAYER ─────────────────────────────────────────────── */}
+
+      {/* Crypto Section */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Bitcoin className="w-4 h-4" />
+          Crypto
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {intelLoading ? (
+            Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : intelData ? (
+            <>
+              <SimpleAssetCard
+                label="Bitcoin"
+                price={intelData.crypto.btc.price}
+                change={intelData.crypto.btc.change}
+                icon={Bitcoin}
+                testId="card-crypto-btc"
+              />
+              <SimpleAssetCard
+                label="Ethereum"
+                price={intelData.crypto.eth.price}
+                change={intelData.crypto.eth.change}
+                icon={Gem}
+                testId="card-crypto-eth"
+              />
+              <SimpleAssetCard
+                label="Solana"
+                price={intelData.crypto.sol.price}
+                change={intelData.crypto.sol.change}
+                icon={Activity}
+                testId="card-crypto-sol"
+              />
+            </>
+          ) : (
+            <div className="col-span-3 text-sm text-muted-foreground py-4 text-center">
+              Crypto data unavailable
+            </div>
+          )}
+        </div>
+        {intelData && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Crypto sentiment:</span>
+            <SentimentBadge overall={intelData.crypto.sentiment} />
+          </div>
+        )}
+      </div>
+
+      {/* Commodities Section */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <FlaskConical className="w-4 h-4" />
+          Commodities
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {intelLoading ? (
+            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : intelData ? (
+            <>
+              <SimpleAssetCard
+                label="Gold"
+                price={intelData.commodities.gold.price}
+                change={intelData.commodities.gold.change}
+                icon={Gem}
+                formatFn={(v) => v === 0 ? "—" : `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+                testId="card-commodity-gold"
+              />
+              <SimpleAssetCard
+                label="Crude Oil"
+                price={intelData.commodities.oil.price}
+                change={intelData.commodities.oil.change}
+                icon={Fuel}
+                formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(2)}`}
+                testId="card-commodity-oil"
+              />
+              <SimpleAssetCard
+                label="Silver"
+                price={intelData.commodities.silver.price}
+                change={intelData.commodities.silver.change}
+                icon={Gem}
+                formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(2)}`}
+                testId="card-commodity-silver"
+              />
+              <SimpleAssetCard
+                label="Natural Gas"
+                price={intelData.commodities.naturalGas.price}
+                change={intelData.commodities.naturalGas.change}
+                icon={Fuel}
+                formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(3)}`}
+                testId="card-commodity-natgas"
+              />
+            </>
+          ) : (
+            <div className="col-span-4 text-sm text-muted-foreground py-4 text-center">
+              Commodities data unavailable
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Congressional Trades Section */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Landmark className="w-4 h-4" />
+          Congressional Trades — What politicians are buying
+        </h2>
+        <Card className="bg-card/60 border-border/50" data-testid="card-congressional-trades">
+          <CardContent className="p-0">
+            {intelLoading ? (
+              <div className="p-4 space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full rounded" />
+                ))}
+              </div>
+            ) : intelData && intelData.congressionalTrades.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/30">
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Politician</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Ticker</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Type</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {intelData.congressionalTrades.map((trade, idx) => (
+                      <tr
+                        key={idx}
+                        className="border-b border-border/20 hover:bg-muted/20 transition-colors"
+                        data-testid={`row-trade-${idx}`}
+                      >
+                        <td className="px-4 py-2.5 text-foreground font-medium">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                            <span className="truncate max-w-[180px]">{trade.politician}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className="font-mono text-xs bg-muted/40 px-1.5 py-0.5 rounded text-primary font-bold">
+                            {trade.ticker}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {trade.type === "sell" ? (
+                            <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] uppercase tracking-wide font-bold">
+                              SELL
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] uppercase tracking-wide font-bold">
+                              BUY
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs">{trade.amount}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">{trade.date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-6 text-sm text-muted-foreground text-center">
+                Congressional trade data unavailable
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Polymarket Predictions Section */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Brain className="w-4 h-4" />
+          Prediction Markets — What the crowd expects
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {intelLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : intelData && intelData.polymarket.length > 0 ? (
+            intelData.polymarket.slice(0, 12).map((event, idx) => (
+              <a
+                key={idx}
+                href={event.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block group"
+                data-testid={`card-polymarket-${idx}`}
+              >
+                <Card className="bg-card/60 border-border/50 hover:bg-card/80 hover:border-primary/30 transition-all h-full">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] uppercase tracking-wide border-border/50 text-muted-foreground shrink-0"
+                      >
+                        {event.category}
+                      </Badge>
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0 mt-0.5" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground leading-snug mb-3 line-clamp-2">
+                      {event.title}
+                    </p>
+                    <ProbabilityBar probability={event.probability} />
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground/60">YES probability</span>
+                      <span className="text-[10px] text-muted-foreground/60 font-mono">
+                        Vol {event.volume} / 24h
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+            ))
+          ) : (
+            <div className="col-span-3 text-sm text-muted-foreground py-4 text-center">
+              Prediction market data unavailable
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Detailed Market Sentiment Section */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Activity className="w-4 h-4" />
+          Detailed Market Sentiment Analysis
+        </h2>
+        <Card className="bg-card/60 border-border/50" data-testid="card-detailed-sentiment">
+          <CardContent className="p-5">
+            {intelLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/6" />
+              </div>
+            ) : intelData ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  {intelData.sentiment.overall === "bullish" && (
+                    <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  )}
+                  {intelData.sentiment.overall === "bearish" && (
+                    <TrendingDown className="w-5 h-5 text-red-400" />
+                  )}
+                  {intelData.sentiment.overall === "neutral" && (
+                    <Shield className="w-5 h-5 text-slate-400" />
+                  )}
+                  <SentimentBadge overall={intelData.sentiment.overall} />
+                  {intelData.fetchedAt && (
+                    <span className="text-xs text-muted-foreground/50 ml-auto font-mono">
+                      {new Date(intelData.fetchedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+                {intelData.sentiment.details ? (
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                    {intelData.sentiment.details}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No sentiment details available.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Sentiment data unavailable</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

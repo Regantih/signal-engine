@@ -10,6 +10,7 @@ import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, 
 import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position, type PortfolioRisk } from "./risk-manager";
 import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
+import { fetchFullIntelligence } from "./intelligence-service";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1357,6 +1358,16 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     try {
       const snapshot = fetchMacroSnapshot();
       res.json(snapshot);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/intelligence — Full market intelligence snapshot
+  app.get("/api/intelligence", async (_req, res) => {
+    try {
+      const intel = fetchFullIntelligence();
+      res.json(intel);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
