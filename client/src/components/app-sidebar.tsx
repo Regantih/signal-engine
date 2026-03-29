@@ -12,10 +12,12 @@ import {
   LineChart,
   Newspaper,
   Sliders,
+  Radar,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/scanner", label: "Scanner", icon: Radar },
   { path: "/market", label: "Live Market", icon: LineChart },
   { path: "/opportunities", label: "Opportunities", icon: Target },
   { path: "/scoring", label: "Live Scoring", icon: Activity },

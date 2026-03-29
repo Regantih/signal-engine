@@ -16,11 +16,13 @@ import Weights from "@/pages/weights";
 import Market from "@/pages/market";
 import News from "@/pages/news";
 import SettingsPage from "@/pages/settings-page";
+import Scanner from "@/pages/scanner";
 
 function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/scanner" component={Scanner} />
       <Route path="/opportunities" component={Opportunities} />
       <Route path="/scoring" component={Scoring} />
       <Route path="/audit" component={Audit} />

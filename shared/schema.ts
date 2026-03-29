@@ -54,6 +54,7 @@ export const opportunities = sqliteTable("opportunities", {
   
   // Status
   status: text("status").notNull().default("watch"), // watch | buy | sell | closed
+  screenerFlags: text("screener_flags"), // JSON array of screener attributions
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

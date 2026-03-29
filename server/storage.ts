@@ -44,6 +44,7 @@ sqlite.exec(`
     target_price REAL,
     stop_loss REAL,
     status TEXT NOT NULL DEFAULT 'watch',
+    screener_flags TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -159,6 +160,13 @@ sqlite.exec(`
     updated_at TEXT NOT NULL
   );
 `);
+
+// Migrate: add screener_flags column if it doesn't exist
+try {
+  sqlite.exec(`ALTER TABLE opportunities ADD COLUMN screener_flags TEXT`);
+} catch (_e) {
+  // Column already exists — ignore
+}
 
 // Seed default weights if empty
 const existingWeights = db.select().from(weightConfig).all();

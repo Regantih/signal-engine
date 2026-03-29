@@ -5,6 +5,7 @@ import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-e
 import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 import { computeAutoSignals } from "./auto-signals";
+import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1009,6 +1010,61 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       }
 
       res.json({ results, count: results.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // UNIVERSE SCANNER
+  // ========================
+
+  // POST /api/scan-universe — Run all screeners to find new opportunities
+  app.post("/api/scan-universe", async (_req, res) => {
+    try {
+      const results = await scanUniverse();
+      res.json({ results, totalHits: results.length, timestamp: new Date().toISOString() });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/scan-universe/add — Add a scanned ticker as a tracked opportunity
+  app.post("/api/scan-universe/add", async (req, res) => {
+    try {
+      const { ticker, name, screeners } = req.body;
+      if (!ticker) return res.status(400).json({ error: "ticker required" });
+
+      // Check if already exists
+      const existing = (await storage.getOpportunities()).find(
+        (o) => o.ticker?.toUpperCase() === ticker.toUpperCase()
+      );
+      if (existing) {
+        // Update screener flags on existing
+        const existingFlags = existing.screenerFlags ? JSON.parse(existing.screenerFlags) : [];
+        const newFlags = [
+          ...existingFlags,
+          ...(screeners || []).map((s: any) => ({
+            id: s.screenerId,
+            name: s.screenerName,
+            reason: s.reason,
+            confidence: s.confidence,
+            detectedAt: s.detectedAt,
+          })),
+        ];
+        await storage.updateOpportunity(existing.id, {
+          screenerFlags: JSON.stringify(newFlags),
+          updatedAt: new Date().toISOString(),
+        });
+        return res.json({
+          ...existing,
+          screenerFlags: JSON.stringify(newFlags),
+          message: "Updated existing opportunity with new screener flags",
+        });
+      }
+
+      const opp = await addScannedOpportunity(ticker, name || ticker, screeners || []);
+      res.json(opp);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

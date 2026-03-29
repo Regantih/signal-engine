@@ -36,9 +36,19 @@ interface Opportunity {
   targetPrice: number | null;
   stopLoss: number | null;
   status: string;
+  screenerFlags: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+const SCREENER_COLORS: Record<string, string> = {
+  MOMENTUM_SURGE: "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+  MEAN_REVERSION_DIP: "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+  VOLUME_ANOMALY: "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
+  QUALITY_VALUE: "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+  ANALYST_UPGRADE: "bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
+  INSIDER_BUYING: "bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
+};
 
 const DOMAIN_LABELS: Record<string, string> = {
   public_markets: "Public Markets",
@@ -433,6 +443,23 @@ export default function Opportunities() {
                         {opp.description}
                       </p>
                     )}
+                    {(() => {
+                      const flags = opp.screenerFlags ? (() => { try { return JSON.parse(opp.screenerFlags); } catch { return []; } })() : [];
+                      return flags.length > 0 ? (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {flags.map((f: any) => (
+                            <span
+                              key={f.id}
+                              className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                                SCREENER_COLORS[f.id] || "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {f.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
 
