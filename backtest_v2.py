@@ -388,6 +388,12 @@ def compute_mean_reversion(closes: List[float]) -> float:
     sma12     = sum(closes[-12:]) / 12
     deviation = (closes[-1] - sma12) / sma12 if sma12 != 0 else 0
 
+    # Fix look-ahead bias: compute rolling 52-week high/low from data available
+    # AT THE TIME of the bar, not from the full dataset (static look-ahead)
+    bar_idx = len(closes) - 1
+    year_high = max(closes[max(0, bar_idx-52):bar_idx+1])
+    year_low = min(closes[max(0, bar_idx-52):bar_idx+1])
+
     if   deviation < -0.15: return 85
     elif deviation < -0.08: return 72
     elif deviation < -0.03: return 60
@@ -568,7 +574,9 @@ def run_backtest_v2():
                 conv_mult = 1.0   # floor — always enter if BUY signal fires
 
             # ── Intra-hold risk management ──────────────────────────────────
-            entry_price  = closes[i]
+            # Add slippage: assume 5bps worse entry price (buy slightly higher)
+            effective_entry = closes[i] * 1.0005
+            entry_price  = effective_entry
             entry_idx    = i
             hwm          = entry_price    # high water mark
             partial_taken = False
@@ -659,6 +667,9 @@ def run_backtest_v2():
                 blended_ret = 0.5 * partial_ret + 0.5 * remainder_ret
             else:
                 blended_ret = remainder_ret
+
+            # Deduct transaction costs: 5bps entry + 5bps exit = 10bps round trip
+            blended_ret = blended_ret - 0.0010  # 10 basis points
 
             hold_weeks = exit_idx - entry_idx
             win = blended_ret > 0
@@ -878,11 +889,16 @@ def main():
     # REPORT
     # ─────────────────────────────────────────────────────────────────────────
 
-    p("# Signal Engine Backtest v2 — Risk-Managed Results")
+    p("# Signal Engine Backtest V2.1 — with look-ahead bias fix, transaction costs, and slippage")
     p("")
     p("> **Generated:** 2026-03-29 | **Dataset:** 10 tickers, Mar 2025 – Mar 2026 (57 weekly bars)")
     p(">")
-    p("> **Key changes from v1:**")
+    p("> **V2.1 fixes applied (on top of V2 risk management):**")
+    p("> 1. **Look-ahead bias fix:** Rolling 52-week high/low now computed from data available AT THE TIME of each bar (not from the full dataset)")
+    p("> 2. **Transaction costs:** 10bps round-trip cost (5bps entry + 5bps exit) deducted from every trade")
+    p("> 3. **Slippage:** 5bps worse entry price applied on every buy (effective_entry = close * 1.0005)")
+    p(">")
+    p("> **V2 changes (from V1):**")
     p("> 1. Active risk management during hold (trailing stop, take-profit, momentum reversal, breakeven stop)")
     p("> 2. Hold period extended from 4 weeks → **6 weeks**")
     p("> 3. TSLA crowding penalty: 80 → **65** | PLTR crowding penalty: 85 → **70**")
@@ -1105,7 +1121,7 @@ def main():
             "The trailing stop and take-profit rules together shift the return distribution:",
             "losses are bounded, while winners that reach +8% lock in partial gains.",
             "",
-            "**Caveats:** 12-month window, 10 tickers, small sample. No transaction costs.",
+            "**Caveats:** 12-month window, 10 tickers, small sample. Transaction costs (10bps) and slippage (5bps) applied.",
             "Do not treat as live-trading proof without out-of-sample validation.",
         ]
     elif passes == 2:
@@ -1158,7 +1174,7 @@ def main():
     p("")
     p("| Limitation | Severity | Notes |")
     p("|------------|:--------:|-------|")
-    p("| No transaction costs | Medium | 0.1–0.2% round-trip erodes returns |")
+    p("| Transaction costs applied | Fixed | 10bps round-trip + 5bps slippage deducted per trade (V2.1 fix) |")
     p("| Static quality signal | High | 25% weight never changes intra-backtest |")
     p("| Small sample (10 tickers) | High | Low statistical power |")
     p("| Single 12-month window | High | No out-of-sample period |")

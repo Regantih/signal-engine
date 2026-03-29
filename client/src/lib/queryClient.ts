@@ -2,6 +2,12 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 const API_BASE = ".";
 
+// Module-level auth token (not localStorage — blocked in sandboxed iframe)
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) { authToken = token; }
+export function getAuthToken(): string | null { return authToken; }
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -16,7 +22,10 @@ export async function apiRequest(
 ): Promise<Response> {
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {}),
+    },
     body: data ? JSON.stringify(data) : undefined,
   });
 
@@ -31,7 +40,11 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey.join("/").replace(/\/\/+/g, "/");
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {}),
+      },
+    });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

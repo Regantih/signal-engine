@@ -12,11 +12,75 @@ import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position,
 import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
 import { fetchFullIntelligence } from "./intelligence-service";
 import { runDailyPipeline, computeCapitalState, getCostMetrics, resetCostMetrics, sellSideScreen, checkEarningsBlackout } from "./execution-engine";
+import { requireAuth, generateToken, validatePassword, isPasswordSet } from "./auth";
+
+// In-memory rate limiter
+const rateLimiter = {
+  trades: new Map<string, number>(), // ticker -> last trade timestamp
+  pipeline: 0, // last pipeline run timestamp
+  maxTradesPerDay: 20,
+  dailyTradeCount: 0,
+  lastResetDate: new Date().toDateString(),
+
+  canTrade(ticker: string): { allowed: boolean; reason?: string } {
+    // Reset daily counter
+    const today = new Date().toDateString();
+    if (today !== this.lastResetDate) {
+      this.dailyTradeCount = 0;
+      this.lastResetDate = today;
+    }
+
+    // Max 20 trades per day
+    if (this.dailyTradeCount >= this.maxTradesPerDay) {
+      return { allowed: false, reason: `Daily trade limit reached (${this.maxTradesPerDay})` };
+    }
+
+    // No duplicate trade on same ticker within 5 minutes
+    const lastTrade = this.trades.get(ticker);
+    if (lastTrade && (Date.now() - lastTrade) < 300000) {
+      return { allowed: false, reason: `Duplicate trade blocked: ${ticker} was traded ${Math.round((Date.now() - lastTrade) / 1000)}s ago` };
+    }
+
+    return { allowed: true };
+  },
+
+  recordTrade(ticker: string) {
+    this.trades.set(ticker, Date.now());
+    this.dailyTradeCount++;
+  },
+
+  canRunPipeline(): boolean {
+    // No more than once per 5 minutes
+    if (Date.now() - this.pipeline < 300000) return false;
+    this.pipeline = Date.now();
+    return true;
+  }
+};
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Apply authentication middleware to all routes
+  app.use(requireAuth);
+
+  // ========================
+  // AUTH
+  // ========================
+
+  app.get("/api/auth/status", (_req, res) => {
+    res.json({ authenticated: true, passwordRequired: isPasswordSet() });
+  });
+
+  app.post("/api/auth/login", (req, res) => {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "Password required" });
+    if (!isPasswordSet()) return res.status(400).json({ error: "No password configured. Set APP_PASSWORD environment variable." });
+    if (!validatePassword(password)) return res.status(401).json({ error: "Invalid password" });
+    const token = generateToken();
+    res.json({ token, expiresIn: "24h" });
+  });
 
   // ========================
   // OPPORTUNITIES
@@ -763,8 +827,8 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       // Mask API keys for security
       const masked = settings.map(s => ({
         ...s,
-        value: s.key.includes("api_key") && s.value.length > 8
-          ? s.value.slice(0, 4) + "..." + s.value.slice(-4)
+        value: (s.key.includes("key") || s.key.includes("secret") || s.key.includes("token") || s.key.includes("password")) && s.value.length > 8
+          ? s.value.slice(0, 4) + "****" + s.value.slice(-4)
           : s.value,
         rawLength: s.value.length,
       }));
@@ -779,7 +843,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       const { key, value } = req.body;
       if (!key || value === undefined) return res.status(400).json({ error: "key and value required" });
       const setting = await storage.upsertSetting(key, value);
-      res.json(setting);
+      res.json({ key: setting.key, updated: true, updatedAt: setting.updatedAt });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1130,6 +1194,20 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       if (!opp.suggestedAllocation || opp.suggestedAllocation <= 0)
         return res.status(400).json({ error: "No allocation — run Auto-Score first" });
 
+      // Kill switch check
+      try {
+        const macro = fetchMacroSnapshot();
+        if (macro.regime === "CRISIS") {
+          return res.status(403).json({ error: "KILL SWITCH ACTIVE: Market in CRISIS regime. No new trades allowed.", regime: macro.regime });
+        }
+      } catch { /* If macro check fails, allow trade but log warning */ }
+
+      // Rate limiting and duplicate order prevention
+      const rateCheck = rateLimiter.canTrade(opp.ticker!);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ error: rateCheck.reason });
+      }
+
       const targetPrice = opp.targetPrice || opp.entryPrice! * 1.1;
       const stopLoss = opp.stopLoss || opp.entryPrice! * 0.95;
 
@@ -1139,6 +1217,9 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         targetPrice,
         stopLoss
       );
+
+      // Record the trade after successful placement
+      rateLimiter.recordTrade(opp.ticker!);
 
       // Update opportunity status
       await storage.updateOpportunity(opp.id, {
@@ -1381,6 +1462,9 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   // POST /api/pipeline/run — Run the full daily pipeline
   app.post("/api/pipeline/run", async (_req, res) => {
     try {
+      if (!rateLimiter.canRunPipeline()) {
+        return res.status(429).json({ error: "Pipeline can only run once every 5 minutes" });
+      }
       const result = await runDailyPipeline();
       res.json(result);
     } catch (e: any) {
@@ -1441,6 +1525,14 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       if (!opp) return res.status(404).json({ error: "Opportunity not found" });
       
       if (action === "BUY") {
+        // Kill switch check for BUY approvals
+        try {
+          const macro = fetchMacroSnapshot();
+          if (macro.regime === "CRISIS") {
+            return res.status(403).json({ error: "KILL SWITCH ACTIVE: Market in CRISIS regime. No new trades allowed.", regime: macro.regime });
+          }
+        } catch { /* If macro check fails, allow approval but log warning */ }
+
         // Mark as approved for execution
         await storage.updateOpportunity(opportunityId, { status: "buy", updatedAt: new Date().toISOString() });
         res.json({ approved: true, action: "BUY", ticker: opp.ticker, message: `Approved BUY for ${opp.ticker}. Execute via Trading page or broker API.` });

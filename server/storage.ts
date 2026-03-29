@@ -14,6 +14,7 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, desc, sql, and } from "drizzle-orm";
+import { encrypt, decrypt } from "./crypto-utils";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -408,25 +409,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   // App Settings
+  // Helper to determine if a setting key holds a sensitive value
+  private isSensitiveKey(key: string): boolean {
+    return key.includes("key") || key.includes("secret") || key.includes("token");
+  }
+
   async getSetting(key: string): Promise<AppSetting | undefined> {
-    return db.select().from(appSettings).where(eq(appSettings.key, key)).get();
+    const setting = db.select().from(appSettings).where(eq(appSettings.key, key)).get();
+    if (!setting) return undefined;
+    // Decrypt value if this is a sensitive key
+    if (this.isSensitiveKey(key)) {
+      return { ...setting, value: decrypt(setting.value) };
+    }
+    return setting;
   }
 
   async upsertSetting(key: string, value: string): Promise<AppSetting> {
     const now = new Date().toISOString();
+    // Encrypt value if this is a sensitive key
+    const storedValue = this.isSensitiveKey(key) ? encrypt(value) : value;
     const existing = db.select().from(appSettings).where(eq(appSettings.key, key)).get();
     if (existing) {
       return db.update(appSettings)
-        .set({ value, updatedAt: now })
+        .set({ value: storedValue, updatedAt: now })
         .where(eq(appSettings.key, key))
         .returning()
         .get()!;
     }
-    return db.insert(appSettings).values({ key, value, updatedAt: now }).returning().get();
+    return db.insert(appSettings).values({ key, value: storedValue, updatedAt: now }).returning().get();
   }
 
   async getAllSettings(): Promise<AppSetting[]> {
-    return db.select().from(appSettings).all();
+    const settings = db.select().from(appSettings).all();
+    // Decrypt sensitive values
+    return settings.map(s => ({
+      ...s,
+      value: this.isSensitiveKey(s.key) ? decrypt(s.value) : s.value,
+    }));
   }
 }
 

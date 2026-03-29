@@ -39,6 +39,39 @@ export interface PortfolioRisk {
   maxPositions: number; // cap at 10
 }
 
+// Compute ATR (Average True Range) from weekly prices
+// This adapts stops to each asset's volatility
+function computeATR(prices: number[], periods: number = 4): number {
+  if (prices.length < 2) return 0;
+  
+  let trSum = 0;
+  let count = 0;
+  for (let i = 1; i < Math.min(prices.length, periods + 1); i++) {
+    const tr = Math.abs(prices[i] - prices[i - 1]);
+    trSum += tr;
+    count++;
+  }
+  
+  return count > 0 ? trSum / count : 0;
+}
+
+// Compute dynamic stop percentage based on ATR
+function dynamicStopPercent(prices: number[]): number {
+  if (prices.length < 3) return 3.0; // default fallback
+  
+  const currentPrice = prices[prices.length - 1];
+  const atr = computeATR(prices);
+  
+  if (currentPrice <= 0 || atr <= 0) return 3.0;
+  
+  // Stop at 2x ATR as percentage of current price
+  // This means volatile stocks get wider stops, stable stocks get tighter
+  const atrPercent = (atr * 2 / currentPrice) * 100;
+  
+  // Clamp between 2% (minimum) and 8% (maximum)
+  return Math.max(2.0, Math.min(8.0, atrPercent));
+}
+
 export function evaluatePosition(
   position: Position,
   weeklyPrices: number[], // last 6 weekly closes (most recent last)
@@ -47,21 +80,23 @@ export function evaluatePosition(
   const pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
   const drawdownFromPeak = ((highWaterMark - currentPrice) / highWaterMark) * 100;
 
-  // Rule 1: TRAILING STOP — -3% from high water mark
-  if (drawdownFromPeak >= 3.0) {
+  // Rule 1: TRAILING STOP — dynamic ATR-based stop (adapts to each asset's volatility)
+  const stopPercent = dynamicStopPercent(weeklyPrices);
+  if (drawdownFromPeak >= stopPercent) {
     return {
       action: "SELL_ALL",
-      reason: `Trailing stop hit: price dropped ${drawdownFromPeak.toFixed(1)}% from peak $${highWaterMark.toFixed(2)}`,
+      reason: `Trailing stop hit: price dropped ${drawdownFromPeak.toFixed(1)}% from peak $${highWaterMark.toFixed(2)} (ATR-based stop: ${stopPercent.toFixed(1)}%)`,
       rule: "TRAILING_STOP",
       urgency: "immediate",
     };
   }
 
-  // Rule 2: TAKE PROFIT — +8% from entry, sell half
-  if (!partialTaken && pnlPercent >= 8.0) {
+  // Rule 2: TAKE PROFIT — dynamic, 2.5x the stop distance from entry
+  const takeProfitPercent = Math.max(6.0, dynamicStopPercent(weeklyPrices) * 2.5); // TP = 2.5x the stop distance
+  if (!partialTaken && pnlPercent >= takeProfitPercent) {
     return {
       action: "SELL_HALF",
-      reason: `Take profit: up ${pnlPercent.toFixed(1)}% from entry, locking in 50% at $${currentPrice.toFixed(2)}`,
+      reason: `Take profit: up ${pnlPercent.toFixed(1)}% from entry (target: ${takeProfitPercent.toFixed(1)}%), locking in 50%`,
       rule: "TAKE_PROFIT",
       urgency: "immediate",
     };
