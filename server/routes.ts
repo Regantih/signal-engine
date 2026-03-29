@@ -8,6 +8,7 @@ import { computeAutoSignals } from "./auto-signals";
 import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
 import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
 import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
+import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position, type PortfolioRisk } from "./risk-manager";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1283,6 +1284,64 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
 
       const signalAccuracy = computeSignalAccuracy(outcomes);
       res.json({ newWeights, signalAccuracy, rescoredCount: rescored.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // RISK MANAGEMENT
+  // ========================
+
+  // POST /api/risk/evaluate — Evaluate all open positions against risk rules
+  app.post("/api/risk/evaluate", async (_req, res) => {
+    try {
+      const opps = await storage.getOpportunities();
+      const openPositions = opps.filter(o => o.status === "buy" && o.entryPrice && o.ticker);
+
+      const decisions = [];
+      for (const opp of openPositions) {
+        const latest = opp.ticker ? await storage.getLatestMarketData(opp.ticker.toUpperCase()) : null;
+        const currentPrice = latest?.close || opp.entryPrice!;
+        const allData = opp.ticker ? await storage.getMarketData(opp.ticker.toUpperCase()) : [];
+        const recentPrices = allData.slice(-6).map(d => d.close);
+
+        const highWaterMark = Math.max(opp.entryPrice!, ...recentPrices);
+
+        const position: Position = {
+          ticker: opp.ticker!,
+          entryPrice: opp.entryPrice!,
+          entryDate: opp.createdAt,
+          currentPrice,
+          highWaterMark,
+          shares: opp.suggestedAllocation ? opp.suggestedAllocation / opp.entryPrice! : 0,
+          allocation: opp.suggestedAllocation || 0,
+          partialTaken: false,
+          compositeScore: opp.compositeScore || 0,
+          screenerCount: opp.screenerFlags ? JSON.parse(opp.screenerFlags).length : 0,
+        };
+
+        const decision = evaluatePosition(position, recentPrices);
+        decisions.push({
+          opportunityId: opp.id,
+          ticker: opp.ticker,
+          name: opp.name,
+          ...decision,
+          currentPrice,
+          entryPrice: opp.entryPrice,
+          pnlPercent: ((currentPrice - opp.entryPrice!) / opp.entryPrice!) * 100,
+        });
+      }
+
+      // Portfolio-level risk
+      const portfolio = await storage.getPortfolio();
+      const portfolioRisk = evaluatePortfolioRisk(
+        portfolio?.cashRemaining || 100,
+        portfolio?.totalBudget || 100,
+        openPositions.length,
+      );
+
+      res.json({ decisions, portfolioRisk, timestamp: new Date().toISOString() });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
