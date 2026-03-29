@@ -12,7 +12,7 @@ import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
 import { SignalBar } from "@/components/signal-bar";
 import { SIGNAL_DESCRIPTIONS, scoreLocally, DEFAULT_WEIGHTS } from "@/lib/scoring";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -114,6 +114,41 @@ export default function Opportunities() {
     },
   });
 
+  const autoScoreAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/auto-score-all");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
+      toast({ title: `Auto-scored ${data?.count ?? 0} opportunities from live finance data` });
+    },
+    onError: (e: any) => {
+      toast({ title: "Auto-score failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const autoScoreMutation = useMutation({
+    mutationFn: async (ticker: string) => {
+      const res = await apiRequest("POST", `/api/auto-score/${ticker}`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
+      const ticker = data?.metadata?.ticker || "";
+      toast({ title: `Auto-scored ${ticker} from live data`, description: `Mom=${data?.signals?.momentum} MR=${data?.signals?.meanReversion} Qual=${data?.signals?.quality} Flow=${data?.signals?.flow} Risk=${data?.signals?.risk} Crowd=${data?.signals?.crowding}` });
+    },
+    onError: (e: any) => {
+      toast({ title: "Auto-score failed", description: e.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setName("");
     setTicker("");
@@ -172,6 +207,16 @@ export default function Opportunities() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => autoScoreAllMutation.mutate()}
+            disabled={autoScoreAllMutation.isPending}
+            data-testid="button-auto-score-all"
+          >
+            <Zap className={`w-3.5 h-3.5 mr-1.5 ${autoScoreAllMutation.isPending ? "animate-pulse" : ""}`} />
+            {autoScoreAllMutation.isPending ? "Auto-Scoring..." : "Auto-Score All"}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -500,6 +545,22 @@ export default function Opportunities() {
                         ))}
                       </div>
                       <div className="pt-2 flex gap-2">
+                        {opp.ticker && opp.domain === "public_markets" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              autoScoreMutation.mutate(opp.ticker!);
+                            }}
+                            disabled={autoScoreMutation.isPending}
+                            data-testid={`button-auto-score-${opp.id}`}
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            Auto-Score
+                          </Button>
+                        )}
                         <Button
                           variant="destructive"
                           size="sm"

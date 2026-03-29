@@ -6,7 +6,7 @@ import { SignalBar } from "@/components/signal-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, LineChart, TrendingUp, TrendingDown, Database } from "lucide-react";
+import { RefreshCw, LineChart, TrendingUp, TrendingDown, Database, Zap } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -322,6 +322,23 @@ export default function Market() {
     },
   });
 
+  const autoScoreAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/auto-score-all");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({ title: `Auto-scored ${data?.count ?? 0} tickers from live finance data` });
+    },
+    onError: (e: any) => {
+      toast({ title: "Auto-score failed", description: e.message, variant: "destructive" });
+    },
+  });
+
   // Filter to public markets with tickers first, then all others
   const marketOpps = opportunities?.filter(
     (o) => o.domain === "public_markets" && o.ticker
@@ -354,6 +371,16 @@ export default function Market() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => autoScoreAllMutation.mutate()}
+            disabled={autoScoreAllMutation.isPending}
+            data-testid="button-auto-score-all"
+          >
+            <Zap className={`w-3.5 h-3.5 mr-1.5 ${autoScoreAllMutation.isPending ? "animate-pulse" : ""}`} />
+            {autoScoreAllMutation.isPending ? "Auto-Scoring..." : "Auto-Score All"}
+          </Button>
           <Button
             variant="outline"
             size="sm"

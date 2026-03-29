@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
+import { computeAutoSignals } from "./auto-signals";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -780,6 +781,237 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   app.get("/api/benzinga/status", async (_req, res) => {
     // Always connected — we use public Benzinga pages
     res.json({ connected: true, keyConfigured: true, source: "public" });
+  });
+
+  // ========================
+  // AUTO-SCORE (Live Data)
+  // ========================
+
+  // POST /api/auto-score/:ticker — Compute signals from live finance data and update opportunity
+  app.post("/api/auto-score/:ticker", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      const signals = computeAutoSignals(ticker);
+
+      if (!signals) {
+        return res.status(400).json({ error: `Could not compute signals for ${ticker}. Finance data unavailable.` });
+      }
+
+      // Find matching opportunity and update
+      const opps = await storage.getOpportunities();
+      const opp = opps.find(o => o.ticker?.toUpperCase() === ticker);
+
+      if (opp) {
+        const now = new Date().toISOString();
+
+        // Update opportunity with new signals
+        await storage.updateOpportunity(opp.id, {
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+          entryPrice: signals.metadata.price,
+          updatedAt: now,
+        });
+
+        // Re-score with new signals
+        const weights = await storage.getWeights(opp.domain) || {
+          momentum: DEFAULT_WEIGHTS.momentum,
+          meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+          quality: DEFAULT_WEIGHTS.quality,
+          flow: DEFAULT_WEIGHTS.flow,
+          risk: DEFAULT_WEIGHTS.risk,
+          crowding: DEFAULT_WEIGHTS.crowding,
+        };
+
+        const portfolio = await storage.getPortfolio();
+        const budget = portfolio?.cashRemaining || 100;
+
+        const result = scoreOpportunity(
+          {
+            momentum: signals.momentum,
+            meanReversion: signals.meanReversion,
+            quality: signals.quality,
+            flow: signals.flow,
+            risk: signals.risk,
+            crowding: signals.crowding,
+          },
+          {
+            momentum: weights.momentum,
+            meanReversion: weights.meanReversion,
+            quality: weights.quality,
+            flow: weights.flow,
+            risk: weights.risk,
+            crowding: weights.crowding,
+          },
+          budget
+        );
+
+        const action = suggestAction(result);
+        const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+        const updated = await storage.updateOpportunity(opp.id, {
+          compositeScore: result.compositeScore,
+          probabilityOfSuccess: result.probabilityOfSuccess,
+          expectedEdge: result.expectedEdge,
+          kellyFraction: result.kellyFraction,
+          convictionBand: result.convictionBand,
+          suggestedAllocation: result.suggestedAllocation,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          updatedAt: now,
+        });
+
+        // Create prediction audit record
+        await storage.createPrediction({
+          opportunityId: opp.id,
+          action,
+          compositeScore: result.compositeScore,
+          probabilityOfSuccess: result.probabilityOfSuccess,
+          expectedEdge: result.expectedEdge,
+          kellyFraction: result.kellyFraction,
+          convictionBand: result.convictionBand,
+          suggestedAllocation: result.suggestedAllocation,
+          entryPrice: signals.metadata.price,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          currentPrice: signals.metadata.price,
+          reasoning: `Auto-scored from live data: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+          signalSnapshot: JSON.stringify({ ...signals, weights }),
+          timestamp: now,
+        });
+
+        res.json({ signals, score: result, action, opportunity: updated, metadata: signals.metadata });
+      } else {
+        // No matching opportunity — just return the computed signals
+        res.json({
+          signals,
+          metadata: signals.metadata,
+          opportunity: null,
+          message: `No opportunity found with ticker ${ticker}. Signals computed but not saved.`,
+        });
+      }
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/auto-score-all — Compute signals for all public_markets opportunities with tickers
+  app.post("/api/auto-score-all", async (_req, res) => {
+    try {
+      const opps = await storage.getOpportunities();
+      const marketOpps = opps.filter(o => o.domain === "public_markets" && o.ticker);
+
+      const results = [];
+      for (const opp of marketOpps) {
+        try {
+          const ticker = opp.ticker!.toUpperCase();
+          const signals = computeAutoSignals(ticker);
+          if (signals) {
+            results.push({
+              ticker,
+              signals: {
+                momentum: signals.momentum,
+                meanReversion: signals.meanReversion,
+                quality: signals.quality,
+                flow: signals.flow,
+                risk: signals.risk,
+                crowding: signals.crowding,
+              },
+              price: signals.metadata.price,
+            });
+
+            // Update opportunity (same logic as single auto-score)
+            const now = new Date().toISOString();
+            await storage.updateOpportunity(opp.id, {
+              momentum: signals.momentum,
+              meanReversion: signals.meanReversion,
+              quality: signals.quality,
+              flow: signals.flow,
+              risk: signals.risk,
+              crowding: signals.crowding,
+              entryPrice: signals.metadata.price,
+              updatedAt: now,
+            });
+
+            const weights = await storage.getWeights(opp.domain) || {
+              momentum: DEFAULT_WEIGHTS.momentum,
+              meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+              quality: DEFAULT_WEIGHTS.quality,
+              flow: DEFAULT_WEIGHTS.flow,
+              risk: DEFAULT_WEIGHTS.risk,
+              crowding: DEFAULT_WEIGHTS.crowding,
+            };
+            const portfolio = await storage.getPortfolio();
+            const budget = portfolio?.cashRemaining || 100;
+
+            const result = scoreOpportunity(
+              {
+                momentum: signals.momentum,
+                meanReversion: signals.meanReversion,
+                quality: signals.quality,
+                flow: signals.flow,
+                risk: signals.risk,
+                crowding: signals.crowding,
+              },
+              {
+                momentum: weights.momentum,
+                meanReversion: weights.meanReversion,
+                quality: weights.quality,
+                flow: weights.flow,
+                risk: weights.risk,
+                crowding: weights.crowding,
+              },
+              budget
+            );
+            const action = suggestAction(result);
+            const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+            await storage.updateOpportunity(opp.id, {
+              compositeScore: result.compositeScore,
+              probabilityOfSuccess: result.probabilityOfSuccess,
+              expectedEdge: result.expectedEdge,
+              kellyFraction: result.kellyFraction,
+              convictionBand: result.convictionBand,
+              suggestedAllocation: result.suggestedAllocation,
+              targetPrice: priceLevels.targetPrice,
+              stopLoss: priceLevels.stopLoss,
+              status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+              updatedAt: now,
+            });
+
+            await storage.createPrediction({
+              opportunityId: opp.id,
+              action,
+              compositeScore: result.compositeScore,
+              probabilityOfSuccess: result.probabilityOfSuccess,
+              expectedEdge: result.expectedEdge,
+              kellyFraction: result.kellyFraction,
+              convictionBand: result.convictionBand,
+              suggestedAllocation: result.suggestedAllocation,
+              entryPrice: signals.metadata.price,
+              targetPrice: priceLevels.targetPrice,
+              stopLoss: priceLevels.stopLoss,
+              currentPrice: signals.metadata.price,
+              reasoning: `Bulk auto-scored: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+              signalSnapshot: JSON.stringify(signals),
+              timestamp: now,
+            });
+          } else {
+            results.push({ ticker, error: "Failed to compute signals" });
+          }
+        } catch (e: any) {
+          results.push({ ticker: opp.ticker, error: e.message });
+        }
+      }
+
+      res.json({ results, count: results.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
   });
 
   return httpServer;
