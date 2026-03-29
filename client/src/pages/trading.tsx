@@ -16,6 +16,13 @@ import {
   TrendingUp,
   TrendingDown,
   ExternalLink,
+  Zap,
+  DollarSign,
+  Activity,
+  ShieldAlert,
+  ThumbsUp,
+  ThumbsDown,
+  Clock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +75,43 @@ interface Opportunity {
   stopLoss: number | null;
   compositeScore: number | null;
   convictionBand: string | null;
+}
+
+interface PipelineResult {
+  phase: string;
+  scanResults: number;
+  scored: number;
+  buySignals: number;
+  sellSignals: number;
+  earningsBlocked: string[];
+  macroRegime: string;
+  macroAdjustment: number;
+  capitalState: CapitalState;
+  costMetrics: CostMetrics;
+  pendingApprovals: Array<{ type: "BUY" | "SELL"; ticker: string; reason: string; allocation?: number; opportunityId: number }>;
+  timestamp: string;
+}
+
+interface CapitalState {
+  totalBudget: number;
+  cashAvailable: number;
+  deployed: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalValue: number;
+  positions: Array<{ ticker: string; allocation: number; currentValue: number; pnl: number }>;
+}
+
+interface CostMetrics {
+  apiCalls: number;
+  uptimeMinutes: number;
+  estimatedCostUsd: number;
+  callsPerHour: number;
+}
+
+interface SellSignalsData {
+  sells: Array<{ opportunityId: number; ticker: string; reason: string; urgency: string }>;
+  count: number;
 }
 
 interface FeedbackSummary {
@@ -218,11 +262,28 @@ export default function Trading() {
   const [executingId, setExecutingId] = useState<number | null>(null);
   const [closingId, setClosingId] = useState<number | null>(null);
   const [closingAll, setClosingAll] = useState(false);
+  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
+  const [lastApproved, setLastApproved] = useState<number | null>(null);
 
   // Queries
   const { data: alpacaStatus, isLoading: statusLoading } = useQuery<AlpacaStatus>({
     queryKey: ["/api/alpaca/status"],
     refetchInterval: 30000,
+  });
+
+  const { data: capitalData } = useQuery<CapitalState>({
+    queryKey: ["/api/capital"],
+    refetchInterval: 60000,
+  });
+
+  const { data: costData } = useQuery<CostMetrics>({
+    queryKey: ["/api/costs"],
+    refetchInterval: 30000,
+  });
+
+  const { data: sellSignalsData } = useQuery<SellSignalsData>({
+    queryKey: ["/api/sell-signals"],
+    refetchInterval: 60000,
   });
 
   const { data: positionsData, isLoading: positionsLoading } = useQuery<{
@@ -250,6 +311,47 @@ export default function Trading() {
 
   const { data: accuracyData } = useQuery<SignalAccuracy>({
     queryKey: ["/api/feedback/signal-accuracy"],
+  });
+
+  // Pipeline mutation
+  const pipelineMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/pipeline/run", {}),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      qc.invalidateQueries({ queryKey: ["/api/capital"] });
+      qc.invalidateQueries({ queryKey: ["/api/costs"] });
+      qc.invalidateQueries({ queryKey: ["/api/sell-signals"] });
+      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+      setPipelineResult(data);
+      toast({ title: `Pipeline complete: ${data.buySignals} buys, ${data.sellSignals} sells` });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "Pipeline Failed", description: e.message });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (body: { opportunityId: number; action: string }) => apiRequest("POST", "/api/pipeline/approve", body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      qc.invalidateQueries({ queryKey: ["/api/capital"] });
+      qc.invalidateQueries({ queryKey: ["/api/sell-signals"] });
+      setPipelineResult(prev =>
+        prev ? { ...prev, pendingApprovals: prev.pendingApprovals.filter(p => p.opportunityId !== vars.opportunityId) } : prev
+      );
+      toast({ title: `${vars.action} approved` });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "Approval Failed", description: e.message });
+    },
+  });
+
+  const resetCostsMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/costs/reset", {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/costs"] });
+      toast({ title: "Cost metrics reset" });
+    },
   });
 
   // Filter buy-ready opportunities
@@ -357,6 +459,12 @@ export default function Trading() {
   const summary = feedbackData?.summary;
   const accuracy = accuracyData?.accuracy ?? {};
 
+  const macroColor = (regime: string) => {
+    if (regime === "RISK_ON") return "text-emerald-500";
+    if (regime === "RISK_OFF" || regime === "CRISIS") return "text-red-500";
+    return "text-amber-500";
+  };
+
   return (
     <div className="p-6 max-w-[1100px] space-y-8">
       {/* Header */}
@@ -370,6 +478,160 @@ export default function Trading() {
         </p>
       </div>
 
+      {/* ── 0. Pipeline Control Panel ────────────────────── */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold">Autonomous Pipeline</h3>
+          </div>
+          <Button
+            onClick={() => pipelineMutation.mutate()}
+            disabled={pipelineMutation.isPending}
+            data-testid="button-run-pipeline"
+            className="gap-1.5"
+          >
+            {pipelineMutation.isPending ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : (
+              <Zap className="w-3 h-3" />
+            )}
+            {pipelineMutation.isPending ? "Running Pipeline..." : "Run Full Pipeline"}
+          </Button>
+        </div>
+
+        {pipelineMutation.isPending && (
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium">Pipeline running...</p>
+                <p className="text-xs text-muted-foreground">Scanning universe, scoring opportunities, checking sell signals</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pipelineResult && !pipelineMutation.isPending && (
+          <div className="space-y-4">
+            {/* Summary bar */}
+            <div className="bg-card border border-border rounded-lg p-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Scanned</p>
+                  <p className="text-lg font-bold">{pipelineResult.scanResults}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Scored</p>
+                  <p className="text-lg font-bold">{pipelineResult.scored}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Buy Signals</p>
+                  <p className="text-lg font-bold text-emerald-500">{pipelineResult.buySignals}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Sell Signals</p>
+                  <p className="text-lg font-bold text-red-500">{pipelineResult.sellSignals}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Macro Regime</p>
+                  <p className={`text-sm font-bold ${macroColor(pipelineResult.macroRegime)}`}>
+                    {pipelineResult.macroRegime}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">
+                      ({pipelineResult.macroAdjustment}x)
+                    </span>
+                  </p>
+                </div>
+              </div>
+              {pipelineResult.earningsBlocked.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <p className="text-xs font-medium text-amber-500 flex items-center gap-1 mb-1">
+                    <AlertCircle className="w-3 h-3" /> Earnings Blackout — {pipelineResult.earningsBlocked.length} ticker(s) blocked
+                  </p>
+                  <p className="text-xs text-muted-foreground">{pipelineResult.earningsBlocked.join(", ")}</p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                Run at {new Date(pipelineResult.timestamp).toLocaleString()}
+              </p>
+            </div>
+
+            {/* Pending approvals */}
+            {pipelineResult.pendingApprovals.length > 0 && (
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                  <h4 className="text-xs font-semibold">Pending Approvals ({pipelineResult.pendingApprovals.length})</h4>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted-foreground">
+                      <th className="px-4 py-2 text-left font-medium">Type</th>
+                      <th className="px-4 py-2 text-left font-medium">Ticker</th>
+                      <th className="px-4 py-2 text-left font-medium">Reason</th>
+                      <th className="px-4 py-2 text-right font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pipelineResult.pendingApprovals.map((item, idx) => (
+                      <tr
+                        key={`${item.opportunityId}-${idx}`}
+                        className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+                        data-testid={`row-approval-${item.opportunityId}`}
+                      >
+                        <td className="px-4 py-3">
+                          <Badge
+                            className={
+                              item.type === "BUY"
+                                ? "bg-emerald-500/15 text-emerald-500"
+                                : "bg-red-500/15 text-red-500"
+                            }
+                          >
+                            {item.type}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">{item.ticker}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-[300px]">{item.reason}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10"
+                              onClick={() => {
+                                setLastApproved(item.opportunityId);
+                                approveMutation.mutate({ opportunityId: item.opportunityId, action: item.type });
+                              }}
+                              disabled={approveMutation.isPending}
+                              data-testid={`button-approve-${item.opportunityId}`}
+                            >
+                              <ThumbsUp className="w-3 h-3 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-muted-foreground"
+                              onClick={() => {
+                                setLastApproved(item.opportunityId);
+                                approveMutation.mutate({ opportunityId: item.opportunityId, action: "REJECT" });
+                              }}
+                              disabled={approveMutation.isPending}
+                              data-testid={`button-reject-${item.opportunityId}`}
+                            >
+                              <ThumbsDown className="w-3 h-3 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
       {/* ── 1. Account Status ──────────────────────────────── */}
       {statusLoading ? (
         <div className="bg-card border border-border rounded-lg p-5">
@@ -377,6 +639,70 @@ export default function Trading() {
         </div>
       ) : (
         <AccountCard status={alpacaStatus} />
+      )}
+
+      {/* ── 1b. Capital Tracker ────────────────────────────── */}
+      {capitalData && (
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <DollarSign className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold">Capital Tracker</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Total Budget</p>
+              <p className="text-base font-semibold mt-0.5">{fmt(capitalData.totalBudget)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Cash Available</p>
+              <p className="text-base font-semibold mt-0.5 text-emerald-500">{fmt(capitalData.cashAvailable)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Deployed</p>
+              <p className="text-base font-semibold mt-0.5">{fmt(capitalData.deployed)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Unrealized P&L</p>
+              <p className={`text-base font-semibold mt-0.5 ${pnlColor(capitalData.unrealizedPnl)}`}>
+                {capitalData.unrealizedPnl >= 0 ? "+" : ""}{fmt(capitalData.unrealizedPnl)}
+              </p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Total Value</p>
+              <p className="text-base font-semibold mt-0.5">{fmt(capitalData.totalValue)}</p>
+            </div>
+          </div>
+          {capitalData.positions.length > 0 && (
+            <div className="mt-3 bg-card border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="px-4 py-2 text-left font-medium">Ticker</th>
+                    <th className="px-4 py-2 text-right font-medium">Allocation</th>
+                    <th className="px-4 py-2 text-right font-medium">Current Value</th>
+                    <th className="px-4 py-2 text-right font-medium">P&L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {capitalData.positions.map((pos) => (
+                    <tr
+                      key={pos.ticker}
+                      className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+                      data-testid={`row-capital-${pos.ticker}`}
+                    >
+                      <td className="px-4 py-2.5 font-semibold">{pos.ticker}</td>
+                      <td className="px-4 py-2.5 text-right">{fmt(pos.allocation)}</td>
+                      <td className="px-4 py-2.5 text-right">{fmt(pos.currentValue)}</td>
+                      <td className={`px-4 py-2.5 text-right font-medium ${pnlColor(pos.pnl)}`}>
+                        {pos.pnl >= 0 ? "+" : ""}{fmt(pos.pnl)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
       {/* ── 2. Open Positions ──────────────────────────────── */}
@@ -483,6 +809,66 @@ export default function Trading() {
         </div>
       </section>
 
+      {/* ── 2b. Sell Signals Panel ─────────────────────────── */}
+      {sellSignalsData && sellSignalsData.count > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldAlert className="w-4 h-4 text-red-500" />
+            <h3 className="text-sm font-semibold">Sell Signals</h3>
+            <Badge className="bg-red-500/15 text-red-500">{sellSignalsData.count}</Badge>
+          </div>
+          <div className="bg-card border border-red-500/20 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="px-4 py-2 text-left font-medium">Ticker</th>
+                  <th className="px-4 py-2 text-left font-medium">Reason</th>
+                  <th className="px-4 py-2 text-left font-medium">Urgency</th>
+                  <th className="px-4 py-2 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sellSignalsData.sells.map((sell) => (
+                  <tr
+                    key={sell.opportunityId}
+                    className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+                    data-testid={`row-sell-signal-${sell.opportunityId}`}
+                  >
+                    <td className="px-4 py-3 font-semibold">{sell.ticker}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[300px]">{sell.reason}</td>
+                    <td className="px-4 py-3">
+                      <Badge
+                        className={
+                          sell.urgency === "immediate"
+                            ? "bg-red-500/15 text-red-500"
+                            : sell.urgency === "end_of_day"
+                            ? "bg-amber-500/15 text-amber-500"
+                            : "bg-muted text-muted-foreground"
+                        }
+                      >
+                        {sell.urgency.replace(/_/g, " ")}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-red-500 border-red-500/30 hover:bg-red-500/10"
+                        onClick={() => approveMutation.mutate({ opportunityId: sell.opportunityId, action: "SELL" })}
+                        disabled={approveMutation.isPending}
+                        data-testid={`button-approve-sell-${sell.opportunityId}`}
+                      >
+                        <ArrowDownCircle className="w-3 h-3 mr-1" /> Approve Sell
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* ── 3. Ready to Execute ───────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -568,22 +954,24 @@ export default function Trading() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        onClick={() => executeMutation.mutate(opp.id)}
-                        disabled={
-                          executingId === opp.id ||
-                          executeMutation.isPending ||
-                          !alpacaStatus?.connected
-                        }
-                        data-testid={`button-execute-${opp.id}`}
-                      >
-                        {executingId === opp.id ? (
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                        ) : (
-                          "Execute"
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <Button
+                          size="sm"
+                          onClick={() => executeMutation.mutate(opp.id)}
+                          disabled={
+                            executingId === opp.id ||
+                            executeMutation.isPending ||
+                            !alpacaStatus?.connected
+                          }
+                          data-testid={`button-execute-${opp.id}`}
+                        >
+                          {executingId === opp.id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            "Execute"
+                          )}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -675,6 +1063,49 @@ export default function Trading() {
           )}
         </div>
       </section>
+
+      {/* ── 4b. Cost Tracker ─────────────────────────────── */}
+      {costData && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold">API Cost Tracker</h3>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => resetCostsMutation.mutate()}
+              disabled={resetCostsMutation.isPending}
+              data-testid="button-reset-costs"
+            >
+              <RefreshCw className="w-3 h-3 mr-1" />
+              Reset
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">API Calls</p>
+              <p className="text-base font-semibold mt-0.5">{costData.apiCalls.toLocaleString()}</p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Uptime</p>
+              <p className="text-base font-semibold mt-0.5 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                {costData.uptimeMinutes}m
+              </p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Est. Cost</p>
+              <p className="text-base font-semibold mt-0.5">${costData.estimatedCostUsd.toFixed(3)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Calls / Hour</p>
+              <p className="text-base font-semibold mt-0.5">{costData.callsPerHour.toLocaleString()}</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── 5. Feedback Panel ────────────────────────────── */}
       <section>

@@ -11,6 +11,7 @@ import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feed
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position, type PortfolioRisk } from "./risk-manager";
 import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
 import { fetchFullIntelligence } from "./intelligence-service";
+import { runDailyPipeline, computeCapitalState, getCostMetrics, resetCostMetrics, sellSideScreen, checkEarningsBlackout } from "./execution-engine";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1368,6 +1369,89 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     try {
       const intel = fetchFullIntelligence();
       res.json(intel);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // EXECUTION PIPELINE
+  // ========================
+
+  // POST /api/pipeline/run — Run the full daily pipeline
+  app.post("/api/pipeline/run", async (_req, res) => {
+    try {
+      const result = await runDailyPipeline();
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/capital — Current capital state
+  app.get("/api/capital", async (_req, res) => {
+    try {
+      const state = await computeCapitalState();
+      res.json(state);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/costs — Cost tracking metrics
+  app.get("/api/costs", async (_req, res) => {
+    res.json(getCostMetrics());
+  });
+
+  // POST /api/costs/reset — Reset cost counters
+  app.post("/api/costs/reset", async (_req, res) => {
+    resetCostMetrics();
+    res.json({ ok: true, message: "Cost metrics reset" });
+  });
+
+  // GET /api/sell-signals — Check which positions should be sold
+  app.get("/api/sell-signals", async (_req, res) => {
+    try {
+      const sells = await sellSideScreen();
+      res.json({ sells, count: sells.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/earnings-check — Check earnings blackout for tickers
+  app.post("/api/earnings-check", async (req, res) => {
+    try {
+      const { tickers } = req.body;
+      if (!tickers || !Array.isArray(tickers)) return res.status(400).json({ error: "tickers array required" });
+      const result = checkEarningsBlackout(tickers);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/pipeline/approve — Approve a pending buy/sell from the pipeline
+  app.post("/api/pipeline/approve", async (req, res) => {
+    try {
+      const { opportunityId, action } = req.body;
+      if (!opportunityId || !action) return res.status(400).json({ error: "opportunityId and action required" });
+      
+      const opp = await storage.getOpportunity(opportunityId);
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+      
+      if (action === "BUY") {
+        // Mark as approved for execution
+        await storage.updateOpportunity(opportunityId, { status: "buy", updatedAt: new Date().toISOString() });
+        res.json({ approved: true, action: "BUY", ticker: opp.ticker, message: `Approved BUY for ${opp.ticker}. Execute via Trading page or broker API.` });
+      } else if (action === "SELL") {
+        await storage.updateOpportunity(opportunityId, { status: "closed", updatedAt: new Date().toISOString() });
+        res.json({ approved: true, action: "SELL", ticker: opp.ticker, message: `Approved SELL for ${opp.ticker}. Position marked as closed.` });
+      } else if (action === "REJECT") {
+        res.json({ approved: false, action: "REJECT", ticker: opp.ticker, message: `Rejected trade for ${opp.ticker}.` });
+      } else {
+        res.status(400).json({ error: "action must be BUY, SELL, or REJECT" });
+      }
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
