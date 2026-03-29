@@ -1,3 +1,4 @@
+import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
 import { storage } from "./storage";
 import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
@@ -34,7 +35,7 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
   const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
   try {
     const escaped = params.replace(/'/g, "'\\''");
-    return JSON.parse(execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8" }));
+    return JSON.parse(execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8", env: getExecEnv() as any }));
   } catch { return null; }
 }
 
@@ -57,11 +58,11 @@ export function checkEarningsBlackout(tickers: string[]): Record<string, { block
   const result: Record<string, { blocked: boolean; earningsDate: string | null; daysUntil: number | null }> = {};
   for (const t of tickers) result[t] = { blocked: false, earningsDate: null, daysUntil: null };
   
-  if (resp?.result?.content) {
+  if (resp?.content) {
     // Parse for each ticker
     for (const t of tickers) {
       const regex = new RegExp(`${t}[^\\n]*?(\\d{4}-\\d{2}-\\d{2})`, "i");
-      const match = resp.result.content.match(regex);
+      const match = resp.content.match(regex);
       if (match) {
         const earningsDate = match[1];
         const daysUntil = Math.ceil((new Date(earningsDate).getTime() - now.getTime()) / 86400000);

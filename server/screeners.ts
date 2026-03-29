@@ -1,3 +1,4 @@
+import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
 
 export interface ScreenerHit {
@@ -23,10 +24,11 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
     const result = execSync(`external-tool call '${escaped}'`, {
       timeout: 30000,
       encoding: "utf-8",
+      env: getExecEnv() as any,
     });
     return JSON.parse(result);
   } catch (e: any) {
-    console.error(`Finance tool error (${toolName}):`, e.message?.slice(0, 200));
+    console.error(`[screener] Finance tool error (${toolName}):`, e.stderr?.slice(0, 200) || e.message?.slice(0, 200));
     return null;
   }
 }
@@ -70,9 +72,9 @@ export async function momentumSurgeScreener(): Promise<ScreenerHit[]> {
     limit: 20,
   });
 
-  if (!resp?.result?.content) return [];
+  if (!resp?.content) return [];
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   const hits: ScreenerHit[] = [];
 
   for (const row of rows) {
@@ -135,9 +137,9 @@ export async function meanReversionScreener(): Promise<ScreenerHit[]> {
     limit: 20,
   });
 
-  if (!resp?.result?.content) return [];
+  if (!resp?.content) return [];
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   const hits: ScreenerHit[] = [];
 
   for (const row of rows) {
@@ -195,9 +197,9 @@ export async function volumeAnomalyScreener(): Promise<ScreenerHit[]> {
     limit: 20,
   });
 
-  if (!resp?.result?.content) return [];
+  if (!resp?.content) return [];
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   const hits: ScreenerHit[] = [];
 
   for (const row of rows) {
@@ -264,9 +266,9 @@ export async function qualityValueScreener(): Promise<ScreenerHit[]> {
     fields: ["price", "pe", "marketCap", "name"],
   });
 
-  if (!resp?.result?.content) return [];
+  if (!resp?.content) return [];
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   const hits: ScreenerHit[] = [];
 
   for (const row of rows) {
@@ -317,8 +319,8 @@ export async function analystConsensusScreener(): Promise<ScreenerHit[]> {
   });
 
   const candidates: string[] = [];
-  if (gainersResp?.result?.content) {
-    const rows = parseCSVContent(gainersResp.result.content);
+  if (gainersResp?.content) {
+    const rows = parseCSVContent(gainersResp.content);
     for (const row of rows) {
       const ticker =
         row["Symbol"] || row["symbol"] || row["Ticker"] || row["ticker"] || "";
@@ -339,9 +341,9 @@ export async function analystConsensusScreener(): Promise<ScreenerHit[]> {
       limit: 20,
     });
 
-    if (!resp?.result?.content) continue;
+    if (!resp?.content) continue;
 
-    const rows = parseCSVContent(resp.result.content);
+    const rows = parseCSVContent(resp.content);
     if (rows.length === 0) continue;
 
     let buyCount = 0;
@@ -357,8 +359,8 @@ export async function analystConsensusScreener(): Promise<ScreenerHit[]> {
 
     let currentPrice = 0;
     let name = ticker;
-    if (quoteResp?.result?.content) {
-      const qrows = parseCSVContent(quoteResp.result.content);
+    if (quoteResp?.content) {
+      const qrows = parseCSVContent(quoteResp.content);
       if (qrows[0]) {
         currentPrice = parsePrice(
           qrows[0]["Price"] || qrows[0]["price"] || qrows[0]["Last"] || "0"
@@ -443,9 +445,9 @@ export async function insiderBuyingScreener(): Promise<ScreenerHit[]> {
       months_lookback: 3,
     });
 
-    if (!resp?.result?.content) continue;
+    if (!resp?.content) continue;
 
-    const rows = parseCSVContent(resp.result.content);
+    const rows = parseCSVContent(resp.content);
     if (rows.length === 0) continue;
 
     let buyCount = 0;
@@ -482,8 +484,8 @@ export async function insiderBuyingScreener(): Promise<ScreenerHit[]> {
     });
     let currentPrice = 0;
     let name = ticker;
-    if (quoteResp?.result?.content) {
-      const qrows = parseCSVContent(quoteResp.result.content);
+    if (quoteResp?.content) {
+      const qrows = parseCSVContent(quoteResp.content);
       if (qrows[0]) {
         currentPrice = parsePrice(
           qrows[0]["Price"] || qrows[0]["price"] || qrows[0]["Last"] || "0"

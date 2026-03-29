@@ -13,6 +13,7 @@ import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
 import { fetchFullIntelligence } from "./intelligence-service";
 import { runDailyPipeline, computeCapitalState, getCostMetrics, resetCostMetrics, sellSideScreen, checkEarningsBlackout } from "./execution-engine";
 import { requireAuth, generateToken, validatePassword, isPasswordSet } from "./auth";
+import { captureCredentials } from "./credentials";
 import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
 
 // In-memory rate limiter
@@ -62,6 +63,12 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Capture fresh credentials from proxy on every request
+  app.use((_req, _res, next) => {
+    captureCredentials();
+    next();
+  });
 
   // Apply authentication middleware to all routes
   app.use(requireAuth);

@@ -1,10 +1,11 @@
+import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
 
 function callFinanceTool(toolName: string, args: Record<string, any>): any {
   const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
   try {
     const escaped = params.replace(/'/g, "'\\''");
-    const result = execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8" });
+    const result = execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8", env: getExecEnv() as any });
     return JSON.parse(result);
   } catch (e: any) {
     console.error(`Intelligence tool error (${toolName}):`, e.message?.slice(0, 200));
@@ -43,9 +44,9 @@ export function fetchCrypto(): CryptoSnapshot {
   });
 
   const defaults = { btc: { price: 0, change: 0 }, eth: { price: 0, change: 0 }, sol: { price: 0, change: 0 }, sentiment: "neutral" };
-  if (!resp?.result?.content) return defaults;
+  if (!resp?.content) return defaults;
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   for (const row of rows) {
     const sym = (row.symbol || "").toUpperCase();
     const price = parseFloat(row.price?.replace(/,/g, "") || "0");
@@ -80,9 +81,9 @@ export function fetchCommodities(): CommoditiesSnapshot {
     gold: { price: 0, change: 0 }, oil: { price: 0, change: 0 },
     silver: { price: 0, change: 0 }, naturalGas: { price: 0, change: 0 },
   };
-  if (!resp?.result?.content) return defaults;
+  if (!resp?.content) return defaults;
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   for (const row of rows) {
     const sym = (row.symbol || "").toUpperCase();
     const price = parseFloat(row.price?.replace(/,/g, "") || "0");
@@ -109,9 +110,9 @@ export function fetchCongressionalTrades(): CongressionalTrade[] {
     limit: 15,
   });
 
-  if (!resp?.result?.content) return [];
+  if (!resp?.content) return [];
 
-  const rows = parseCSVContent(resp.result.content);
+  const rows = parseCSVContent(resp.content);
   return rows.slice(0, 15).map(row => ({
     politician: row.representative || row.politician || row.name || "Unknown",
     ticker: row.ticker || row.symbol || "N/A",
@@ -173,14 +174,14 @@ export function fetchDetailedSentiment(): SentimentSnapshot {
     action: "Analyzing comprehensive market sentiment",
   });
 
-  if (!resp?.result?.content) return { overall: "neutral", details: "Unable to fetch sentiment data" };
+  if (!resp?.content) return { overall: "neutral", details: "Unable to fetch sentiment data" };
 
-  const content = resp.result.content.toLowerCase();
+  const content = resp.content.toLowerCase();
   let overall: string = "neutral";
   if (content.includes("bullish") || content.includes("positive") || content.includes("optimistic")) overall = "bullish";
   else if (content.includes("bearish") || content.includes("negative") || content.includes("pessimistic") || content.includes("fear")) overall = "bearish";
 
-  return { overall, details: resp.result.content.slice(0, 500) };
+  return { overall, details: resp.content.slice(0, 500) };
 }
 
 // --- FULL INTELLIGENCE SNAPSHOT ---

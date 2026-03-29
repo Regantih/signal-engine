@@ -1,3 +1,4 @@
+import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
 
 // ──────────────────────────────────────────────
@@ -11,10 +12,11 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
     const result = execSync(`external-tool call '${escaped}'`, {
       timeout: 30000,
       encoding: "utf-8",
+      env: getExecEnv() as any,
     });
     return JSON.parse(result);
   } catch (e: any) {
-    console.error(`Finance tool error (${toolName}):`, e.message?.slice(0, 200));
+    console.error(`[macro] Finance tool error (${toolName}):`, e.stderr?.slice(0, 200) || e.message?.slice(0, 200));
     return null;
   }
 }
@@ -247,8 +249,8 @@ export function fetchMacroSnapshot(): MacroSnapshot {
   // ── Parse quotes ──
   const quoteMap: Record<string, { price: number; change: number; changePct: number }> = {};
 
-  if (quotesResp?.result?.content) {
-    const rows = parseCSVContent(quotesResp.result.content);
+  if (quotesResp?.content) {
+    const rows = parseCSVContent(quotesResp.content);
     for (const row of rows) {
       const sym =
         row["Symbol"] || row["symbol"] || row["Ticker"] || row["ticker"] || "";
@@ -293,8 +295,8 @@ export function fetchMacroSnapshot(): MacroSnapshot {
 
   // ── Parse sentiment ──
   let sentimentStr = "neutral";
-  if (sentimentResp?.result?.content) {
-    const content = sentimentResp.result.content.toLowerCase();
+  if (sentimentResp?.content) {
+    const content = sentimentResp.content.toLowerCase();
     if (content.includes("bullish") || content.includes("bull")) {
       sentimentStr = "bullish";
     } else if (content.includes("bearish") || content.includes("bear")) {
@@ -310,8 +312,8 @@ export function fetchMacroSnapshot(): MacroSnapshot {
   let interestRate: number | null = null;
   let unemploymentRate: number | null = null;
 
-  if (macroResp?.result?.content) {
-    const rows = parseCSVContent(macroResp.result.content);
+  if (macroResp?.content) {
+    const rows = parseCSVContent(macroResp.content);
     gdpGrowth = extractMacroValue(rows, ["gdp", "growth"]);
     inflationRate = extractMacroValue(rows, ["inflation", "cpi"]);
     interestRate = extractMacroValue(rows, ["interest rate", "fed", "federal funds"]);

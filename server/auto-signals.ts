@@ -1,3 +1,4 @@
+import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
 
 interface AutoSignals {
@@ -23,6 +24,7 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
     const result = execSync(`external-tool call '${escaped}'`, {
       timeout: 30000,
       encoding: "utf-8",
+      env: getExecEnv() as any,
     });
     return JSON.parse(result);
   } catch (e: any) {
@@ -333,13 +335,13 @@ export function computeAutoSignals(ticker: string): AutoSignals | null {
     limit: 30,
   });
 
-  if (!quoteResp?.result?.content) {
+  if (!quoteResp?.content) {
     console.error(`[auto-signals] No quote data for ${ticker}`);
     return null;
   }
 
   // Parse quote data from markdown table
-  const quoteRows = parseCSVContent(quoteResp.result.content);
+  const quoteRows = parseCSVContent(quoteResp.content);
   const quote = quoteRows[0] || {};
   const currentPrice = parseFloat(quote.price) || 0;
   const volume = parseInt((quote.volume || "0").replace(/,/g, ""));
@@ -352,8 +354,8 @@ export function computeAutoSignals(ticker: string): AutoSignals | null {
   // Parse price history
   let priceHistory: Array<{ close: number; volume?: number }> = [];
 
-  if (historyResp?.result?.content) {
-    const histContent = historyResp.result.content;
+  if (historyResp?.content) {
+    const histContent = historyResp.content;
     const histRows = parseCSVContent(histContent);
     if (histRows.length > 0) {
       priceHistory = histRows
@@ -386,8 +388,8 @@ export function computeAutoSignals(ticker: string): AutoSignals | null {
     evEbitda: 20,
   };
 
-  if (ratiosResp?.result?.content) {
-    const ratioRows = parseCSVContent(ratiosResp.result.content);
+  if (ratiosResp?.content) {
+    const ratioRows = parseCSVContent(ratiosResp.content);
     // Get most recent row (last one)
     const latest = ratioRows[ratioRows.length - 1] || {};
 
@@ -410,8 +412,8 @@ export function computeAutoSignals(ticker: string): AutoSignals | null {
   // Parse analyst data
   let analystData = { buyPct: 50, avgTargetUpside: 10 };
 
-  if (analystResp?.result?.content) {
-    const content = analystResp.result.content;
+  if (analystResp?.content) {
+    const content = analystResp.content;
     const analystRows = parseCSVContent(content);
 
     if (analystRows.length > 0) {

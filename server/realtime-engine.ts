@@ -16,12 +16,29 @@ let isRunning = false;
 let pollInterval: NodeJS.Timeout | null = null;
 let tickCount = 0;
 
+// Token refresh: the site proxy updates process.env on each incoming request
+// We need to capture the latest env vars for background polling
+let latestEnv: Record<string, string> = {};
+
 function callFinanceTool(toolName: string, args: Record<string, any>): any {
   const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
   try {
     const escaped = params.replace(/'/g, "'\\''");
-    return JSON.parse(execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8" }));
-  } catch { return null; }
+    // Use latest captured env (refreshed by proxy on each request)
+    const { getExecEnv } = require("./credentials");
+    return JSON.parse(execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8", env: getExecEnv() as any }));
+  } catch (e: any) {
+    console.error(`[realtime] Finance tool error (${toolName}):`, e.stderr?.slice(0, 100) || e.message?.slice(0, 100));
+    return null;
+  }
+}
+
+// Call this from request handlers to capture fresh proxy-injected env
+export function refreshCredentials() {
+  const key = process.env.ASI_EXTERNAL_TOOLS_KEY;
+  const endpoint = process.env.ASI_EXTERNAL_TOOLS_ENDPOINT;
+  if (key) latestEnv.ASI_EXTERNAL_TOOLS_KEY = key;
+  if (endpoint) latestEnv.ASI_EXTERNAL_TOOLS_ENDPOINT = endpoint;
 }
 
 function parseCSVContent(content: string): Record<string, string>[] {
@@ -66,8 +83,8 @@ async function pollPrices() {
       fields: ["price", "change", "changesPercentage", "volume"],
     });
 
-    if (resp?.result?.content) {
-      const rows = parseCSVContent(resp.result.content);
+    if (resp?.content) {
+      const rows = parseCSVContent(resp.content);
       const now = new Date().toISOString();
 
       for (const row of rows) {
