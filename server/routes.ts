@@ -13,6 +13,7 @@ import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
 import { fetchFullIntelligence } from "./intelligence-service";
 import { runDailyPipeline, computeCapitalState, getCostMetrics, resetCostMetrics, sellSideScreen, checkEarningsBlackout } from "./execution-engine";
 import { requireAuth, generateToken, validatePassword, isPasswordSet } from "./auth";
+import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -1547,6 +1548,50 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
+  });
+
+  // ========================
+  // REAL-TIME STREAMING
+  // ========================
+
+  // GET /api/realtime/stream — SSE endpoint for live price updates
+  app.get("/api/realtime/stream", (req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    // Send initial connection event
+    res.write(`event: connected\ndata: ${JSON.stringify({ message: "Real-time stream connected" })}\n\n`);
+
+    addClient(res);
+
+    // Start polling if not already running
+    startRealtime(30000); // 30 second intervals
+
+    req.on("close", () => {
+      removeClient(res);
+    });
+  });
+
+  // GET /api/realtime/status — Current realtime engine status
+  app.get("/api/realtime/status", (_req, res) => {
+    res.json(getRealtimeStatus());
+  });
+
+  // POST /api/realtime/start — Start the realtime engine
+  app.post("/api/realtime/start", (_req, res) => {
+    const interval = 30000; // 30 seconds
+    startRealtime(interval);
+    res.json({ started: true, intervalMs: interval });
+  });
+
+  // POST /api/realtime/stop — Stop the realtime engine
+  app.post("/api/realtime/stop", (_req, res) => {
+    stopRealtime();
+    res.json({ stopped: true });
   });
 
   return httpServer;

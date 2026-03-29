@@ -14,8 +14,10 @@ import {
   Wallet,
   Webhook,
   Copy,
+  AlertTriangle,
 } from "lucide-react";
 import { useState } from "react";
+import { useRealtime } from "@/hooks/use-realtime";
 
 interface Stats {
   totalOpportunities: number;
@@ -157,6 +159,8 @@ function TradingViewIntegration() {
 }
 
 export default function Dashboard() {
+  const { prices, connected, lastUpdate, alerts, tickCount } = useRealtime();
+
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ["/api/stats"],
   });
@@ -187,6 +191,50 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
+      {/* Real-time Status Bar */}
+      <div className="flex items-center justify-between px-1 py-2 border-b border-border/30 mb-4">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} data-testid="status-realtime-connection" />
+          <span className="text-[10px] text-muted-foreground">
+            {connected ? `Live · ${tickCount} ticks` : "Disconnected"}
+          </span>
+          {lastUpdate && (
+            <span className="text-[10px] text-muted-foreground/50">
+              Updated {new Date(lastUpdate).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+        {/* Ticker tape */}
+        <div className="flex items-center gap-3 overflow-x-auto" data-testid="ticker-tape">
+          {Object.entries(prices).slice(0, 8).map(([symbol, data]) => (
+            <div key={symbol} className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-mono text-muted-foreground">{symbol}</span>
+              <span className="text-[10px] font-mono tabular-nums">${typeof data.price === 'number' ? data.price.toFixed(2) : data.price}</span>
+              <span className={`text-[9px] font-mono tabular-nums ${(data.changePct || 0) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                {(data.changePct || 0) >= 0 ? "+" : ""}{typeof data.changePct === 'number' ? data.changePct.toFixed(2) : data.changePct}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Risk Alerts */}
+      {alerts.length > 0 && (
+        <div className="mb-4 p-3 bg-red-500/5 border border-red-500/20 rounded-lg" data-testid="risk-alerts-panel">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <span className="text-xs font-medium text-red-500">Risk Alerts ({alerts.length})</span>
+          </div>
+          <div className="space-y-1">
+            {alerts.slice(0, 3).map((alert, i) => (
+              <div key={i} className="text-[11px] text-muted-foreground" data-testid={`risk-alert-${i}`}>
+                <span className="font-mono font-medium text-foreground">{alert.ticker}</span> — {alert.reason}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h2 className="text-xl font-semibold">Signal Dashboard</h2>
