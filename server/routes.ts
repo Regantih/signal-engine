@@ -414,5 +414,292 @@ export async function registerRoutes(
     });
   });
 
+  // ========================
+  // MARKET DATA
+  // ========================
+
+  // GET /api/market-data/:ticker - Get cached OHLCV data
+  app.get("/api/market-data/:ticker", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      const data = await storage.getMarketData(ticker);
+      const latest = data.length > 0 ? data[data.length - 1] : null;
+      
+      // Check freshness: < 1 hour
+      const isFresh = latest 
+        ? (Date.now() - new Date(latest.fetchedAt).getTime()) < 3600000 
+        : false;
+
+      res.json({ ticker, data, isFresh, count: data.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/market-data/:ticker/quote - Get latest quote
+  app.get("/api/market-data/:ticker/quote", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      const latest = await storage.getLatestMarketData(ticker);
+      
+      if (!latest) {
+        return res.json({ ticker, price: null, change: null, changePercent: null });
+      }
+
+      // Get previous day to compute change
+      const allData = await storage.getMarketData(ticker);
+      const idx = allData.findIndex(d => d.id === latest.id);
+      const prev = idx > 0 ? allData[idx - 1] : null;
+      
+      const change = prev ? latest.close - prev.close : null;
+      const changePercent = prev ? ((latest.close - prev.close) / prev.close) * 100 : null;
+
+      res.json({
+        ticker,
+        price: latest.close,
+        change,
+        changePercent,
+        date: latest.date,
+        open: latest.open,
+        high: latest.high,
+        low: latest.low,
+        volume: latest.volume,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/market-data/fetch - Manually trigger fetch (stub — caching layer only)
+  app.post("/api/market-data/fetch", async (req, res) => {
+    try {
+      const { ticker } = req.body;
+      if (!ticker) return res.status(400).json({ error: "ticker required" });
+      const data = await storage.getMarketData(ticker.toUpperCase());
+      res.json({ ticker: ticker.toUpperCase(), cached: data.length, message: "Use /api/market-data/seed to add data" });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/market-data/seed - Seed historical OHLCV data
+  app.post("/api/market-data/seed", async (req, res) => {
+    try {
+      const { ticker, data } = req.body;
+      if (!ticker || !Array.isArray(data)) {
+        return res.status(400).json({ error: "ticker and data array required" });
+      }
+
+      const now = new Date().toISOString();
+      const rows = data.map((d: any) => ({
+        ticker: ticker.toUpperCase(),
+        date: d.date,
+        open: d.open ?? null,
+        high: d.high ?? null,
+        low: d.low ?? null,
+        close: d.close,
+        volume: d.volume ?? null,
+        fetchedAt: now,
+      }));
+
+      await storage.seedMarketData(ticker.toUpperCase(), rows);
+      res.json({ ok: true, ticker: ticker.toUpperCase(), count: rows.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // TRADINGVIEW WEBHOOKS
+  // ========================
+
+  // POST /api/webhooks/tradingview - Receive TradingView webhook alerts
+  app.post("/api/webhooks/tradingview", async (req, res) => {
+    try {
+      // Respond immediately (TradingView requires <3s)
+      const now = new Date().toISOString();
+      const body = req.body;
+
+      const ticker = (body.ticker || body.symbol || "UNKNOWN").toUpperCase();
+      const alertType = body.alert_type || body.alertType || (body.action ? "price_cross" : "custom");
+      const message = body.message || body.comment || JSON.stringify(body);
+
+      await storage.createWebhookAlert({
+        ticker,
+        alertType,
+        message,
+        rawPayload: JSON.stringify(body),
+        processed: 0,
+        receivedAt: now,
+      });
+
+      res.status(200).json({ ok: true, received: now });
+    } catch (e: any) {
+      // Still return 200 so TradingView doesn't retry
+      res.status(200).json({ ok: false, error: e.message });
+    }
+  });
+
+  // GET /api/webhooks/alerts - List recent webhook alerts
+  app.get("/api/webhooks/alerts", async (req, res) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const alerts = await storage.getWebhookAlerts(limit);
+      res.json(alerts);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // PUBLISH / SOCIAL
+  // ========================
+
+  // POST /api/publish - Generate a formatted post for a prediction
+  app.post("/api/publish", async (req, res) => {
+    try {
+      const { predictionId, platform = "clipboard" } = req.body;
+      if (!predictionId) return res.status(400).json({ error: "predictionId required" });
+
+      const preds = await storage.getPredictions();
+      const pred = preds.find(p => p.id === predictionId);
+      if (!pred) return res.status(404).json({ error: "Prediction not found" });
+
+      const opp = await storage.getOpportunity(pred.opportunityId);
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+
+      let snapshot: any = {};
+      try { snapshot = JSON.parse(pred.signalSnapshot); } catch {}
+
+      const ticker = opp.ticker ? opp.ticker.toUpperCase() : "";
+      const name = opp.name;
+      const content = `📊 SIGNAL ENGINE — ${pred.action} ${ticker || name}
+
+Domain: ${opp.domain.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+Composite Score: ${pred.compositeScore.toFixed(3)}
+P(Success): ${(pred.probabilityOfSuccess * 100).toFixed(1)}%
+Expected Edge: ${pred.expectedEdge.toFixed(3)}
+Conviction: ${pred.convictionBand?.toUpperCase()} | Kelly: ${(pred.kellyFraction * 100).toFixed(2)}%
+Allocation: $${pred.suggestedAllocation.toFixed(2)} of $100
+
+Entry: ${pred.entryPrice ? `$${pred.entryPrice.toFixed(2)}` : "N/A"} | Target: ${pred.targetPrice ? `$${pred.targetPrice.toFixed(2)}` : "N/A"} | Stop: ${pred.stopLoss ? `$${pred.stopLoss.toFixed(2)}` : "N/A"}
+
+Signal Breakdown:
+  Momentum: ${snapshot.momentum ?? "—"}/100
+  Mean Reversion: ${snapshot.meanReversion ?? "—"}/100
+  Quality: ${snapshot.quality ?? "—"}/100
+  Flow: ${snapshot.flow ?? "—"}/100
+  Risk: ${snapshot.risk ?? "—"}/100 (penalty)
+  Crowding: ${snapshot.crowding ?? "—"}/100 (penalty)
+
+⏰ Timestamped: ${pred.timestamp}
+🔒 Immutable audit record #${pred.id}
+
+Methodology: Renaissance-style multi-signal aggregation with Z-score normalization, logistic probability, and fractional Kelly sizing.
+
+⚠️ Not financial advice. This is a public experiment in systematic signal scoring.`;
+
+      const now = new Date().toISOString();
+      await storage.createPublishedPrediction({
+        predictionId: pred.id,
+        opportunityId: opp.id,
+        platform,
+        postContent: content,
+        publishedAt: now,
+      });
+
+      res.json({ content, platform, publishedAt: now });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/published - List published predictions
+  app.get("/api/published", async (_req, res) => {
+    try {
+      const published = await storage.getPublishedPredictions();
+      res.json(published);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // LIVE P&L
+  // ========================
+
+  // GET /api/live-pnl - Compute live P&L for all "buy" status opportunities
+  app.get("/api/live-pnl", async (_req, res) => {
+    try {
+      const opps = await storage.getOpportunities();
+      const buyOpps = opps.filter(o => o.status === "buy" && o.entryPrice);
+
+      const results = [];
+      let totalPnl = 0;
+      let totalAllocated = 0;
+
+      for (const opp of buyOpps) {
+        if (!opp.ticker || !opp.entryPrice) continue;
+
+        const latest = await storage.getLatestMarketData(opp.ticker.toUpperCase());
+        const currentPrice = latest?.close ?? opp.entryPrice;
+        const entryPrice = opp.entryPrice;
+        const allocation = opp.suggestedAllocation || 0;
+        const shares = allocation / entryPrice;
+        const pnl = (currentPrice - entryPrice) * shares;
+        const pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+
+        totalPnl += pnl;
+        totalAllocated += allocation;
+
+        results.push({
+          opportunityId: opp.id,
+          name: opp.name,
+          ticker: opp.ticker,
+          entryPrice,
+          currentPrice,
+          pnl: Math.round(pnl * 100) / 100,
+          pnlPercent: Math.round(pnlPercent * 100) / 100,
+          allocation,
+          hasLiveData: !!latest,
+        });
+      }
+
+      const totalPnlPercent = totalAllocated > 0 ? (totalPnl / totalAllocated) * 100 : 0;
+
+      res.json({
+        positions: results,
+        totals: {
+          totalPnl: Math.round(totalPnl * 100) / 100,
+          totalPnlPercent: Math.round(totalPnlPercent * 100) / 100,
+          totalAllocated: Math.round(totalAllocated * 100) / 100,
+          positionCount: results.length,
+        },
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/refresh-prices - Fetch latest prices for all public_markets opps with tickers
+  app.post("/api/refresh-prices", async (_req, res) => {
+    try {
+      const opps = await storage.getOpportunities();
+      const marketOpps = opps.filter(o => o.domain === "public_markets" && o.ticker);
+      
+      const tickers = [...new Set(marketOpps.map(o => o.ticker!.toUpperCase()))];
+      const results: Record<string, any> = {};
+
+      for (const ticker of tickers) {
+        const data = await storage.getLatestMarketData(ticker);
+        results[ticker] = data ? { price: data.close, date: data.date } : { price: null, message: "No cached data" };
+      }
+
+      res.json({ ok: true, tickers, results });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }

@@ -12,7 +12,10 @@ import {
   Activity,
   BarChart3,
   Wallet,
+  Webhook,
+  Copy,
 } from "lucide-react";
+import { useState } from "react";
 
 interface Stats {
   totalOpportunities: number;
@@ -57,6 +60,101 @@ const DOMAIN_LABELS: Record<string, string> = {
   content_brand: "Content / Brand",
   side_business: "Side Business",
 };
+
+function TradingViewIntegration() {
+  const webhookUrl = `${window.location.origin}/api/webhooks/tradingview`;
+  const [copied, setCopied] = useState(false);
+
+  const { data: alerts } = useQuery<any[]>({
+    queryKey: ["/api/webhooks/alerts"],
+    queryFn: () => apiRequest("GET", "/api/webhooks/alerts?limit=5"),
+  });
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(webhookUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const examplePayload = JSON.stringify(
+    { ticker: "NVDA", strategy: "MA_Cross", action: "BUY", price: 875.5, message: "Golden cross confirmed" },
+    null,
+    2
+  );
+
+  return (
+    <div className="bg-card border border-card-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Webhook className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-medium">TradingView Integration</h3>
+        <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded ml-auto">
+          {alerts?.length ?? 0} recent alerts
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {/* Webhook URL */}
+        <div>
+          <span className="text-xs text-muted-foreground block mb-1">Webhook URL</span>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs bg-muted px-3 py-2 rounded font-mono break-all">
+              {webhookUrl}
+            </code>
+            <button
+              onClick={copyUrl}
+              className="shrink-0 p-2 rounded hover:bg-muted transition-colors"
+              data-testid="button-copy-webhook-url"
+              title="Copy webhook URL"
+            >
+              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+          </div>
+          {copied && (
+            <span className="text-xs text-emerald-500 mt-1 block">Copied!</span>
+          )}
+        </div>
+
+        {/* Expected format */}
+        <div>
+          <span className="text-xs text-muted-foreground block mb-1">Expected JSON format</span>
+          <pre className="text-xs bg-muted px-3 py-2 rounded font-mono overflow-x-auto text-muted-foreground">
+            {examplePayload}
+          </pre>
+        </div>
+
+        {/* Recent alerts */}
+        {alerts && alerts.length > 0 && (
+          <div>
+            <span className="text-xs text-muted-foreground block mb-1">Recent Alerts</span>
+            <div className="space-y-1">
+              {alerts.slice(0, 3).map((alert: any) => (
+                <div key={alert.id} className="flex items-center justify-between text-xs bg-muted/50 px-2 py-1.5 rounded">
+                  <span className="font-mono text-primary">{alert.ticker}</span>
+                  <span className="text-muted-foreground truncate mx-2 flex-1">{alert.message}</span>
+                  <span className="text-muted-foreground/60 shrink-0">
+                    {new Date(alert.receivedAt).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-[10px] text-muted-foreground/50">
+          Configure this URL in TradingView → Alerts → Webhook URL. Supports any JSON payload.{" "}
+          <a
+            href="https://www.tradingview.com/support/solutions/43000529348-about-webhooks/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary/60 underline"
+          >
+            TradingView webhook docs →
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
@@ -266,6 +364,9 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* TradingView Integration */}
+      <TradingViewIntegration />
 
       {/* Mathematical Framework Info */}
       <div className="bg-card border border-card-border rounded-lg p-4">

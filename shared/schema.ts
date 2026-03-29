@@ -118,11 +118,48 @@ export const portfolio = sqliteTable("portfolio", {
   updatedAt: text("updated_at").notNull(),
 });
 
+// Market data cache
+export const marketData = sqliteTable("market_data", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ticker: text("ticker").notNull(),
+  date: text("date").notNull(),
+  open: real("open"),
+  high: real("high"),
+  low: real("low"),
+  close: real("close").notNull(),
+  volume: integer("volume"),
+  fetchedAt: text("fetched_at").notNull(),
+});
+
+// TradingView webhook alerts
+export const webhookAlerts = sqliteTable("webhook_alerts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ticker: text("ticker").notNull(),
+  alertType: text("alert_type").notNull(), // "price_cross", "indicator", "custom"
+  message: text("message").notNull(),
+  rawPayload: text("raw_payload").notNull(),
+  processed: integer("processed").notNull().default(0),
+  receivedAt: text("received_at").notNull(),
+});
+
+// Published predictions (for LinkedIn/X accountability)
+export const publishedPredictions = sqliteTable("published_predictions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  predictionId: integer("prediction_id").notNull(),
+  opportunityId: integer("opportunity_id").notNull(),
+  platform: text("platform").notNull(), // "linkedin" | "x" | "clipboard"
+  postContent: text("post_content").notNull(),
+  publishedAt: text("published_at").notNull(),
+});
+
 // Insert schemas
 export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, compositeScore: true, probabilityOfSuccess: true, expectedEdge: true, kellyFraction: true, convictionBand: true, suggestedAllocation: true });
 export const insertPredictionSchema = createInsertSchema(predictions).omit({ id: true });
 export const insertPerformanceSchema = createInsertSchema(performance).omit({ id: true });
 export const insertWeightConfigSchema = createInsertSchema(weightConfig).omit({ id: true });
+export const insertMarketDataSchema = createInsertSchema(marketData).omit({ id: true });
+export const insertWebhookAlertSchema = createInsertSchema(webhookAlerts).omit({ id: true });
+export const insertPublishedPredictionSchema = createInsertSchema(publishedPredictions).omit({ id: true });
 
 // Types
 export type Opportunity = typeof opportunities.$inferSelect;
@@ -134,3 +171,9 @@ export type InsertPerformance = z.infer<typeof insertPerformanceSchema>;
 export type WeightConfig = typeof weightConfig.$inferSelect;
 export type InsertWeightConfig = z.infer<typeof insertWeightConfigSchema>;
 export type Portfolio = typeof portfolio.$inferSelect;
+export type MarketData = typeof marketData.$inferSelect;
+export type InsertMarketData = z.infer<typeof insertMarketDataSchema>;
+export type WebhookAlert = typeof webhookAlerts.$inferSelect;
+export type InsertWebhookAlert = z.infer<typeof insertWebhookAlertSchema>;
+export type PublishedPrediction = typeof publishedPredictions.$inferSelect;
+export type InsertPublishedPrediction = z.infer<typeof insertPublishedPredictionSchema>;

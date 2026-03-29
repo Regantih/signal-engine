@@ -4,11 +4,14 @@ import {
   type Performance, type InsertPerformance, performance,
   type WeightConfig, type InsertWeightConfig, weightConfig,
   type Portfolio, portfolio,
+  type MarketData, type InsertMarketData, marketData,
+  type WebhookAlert, type InsertWebhookAlert, webhookAlerts,
+  type PublishedPrediction, type InsertPublishedPrediction, publishedPredictions,
   DEFAULT_WEIGHTS, DOMAINS,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -98,6 +101,37 @@ sqlite.exec(`
     total_trades INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS market_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    date TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL NOT NULL,
+    volume INTEGER,
+    fetched_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS webhook_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    alert_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    raw_payload TEXT NOT NULL,
+    processed INTEGER NOT NULL DEFAULT 0,
+    received_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS published_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prediction_id INTEGER NOT NULL,
+    opportunity_id INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    post_content TEXT NOT NULL,
+    published_at TEXT NOT NULL
+  );
 `);
 
 // Seed default weights if empty
@@ -156,6 +190,21 @@ export interface IStorage {
   // Portfolio
   getPortfolio(): Promise<Portfolio | undefined>;
   updatePortfolio(data: Partial<Portfolio>): Promise<Portfolio | undefined>;
+
+  // Market Data
+  getMarketData(ticker: string): Promise<MarketData[]>;
+  getLatestMarketData(ticker: string): Promise<MarketData | undefined>;
+  upsertMarketData(data: InsertMarketData): Promise<MarketData>;
+  seedMarketData(ticker: string, rows: InsertMarketData[]): Promise<void>;
+
+  // Webhook Alerts
+  createWebhookAlert(alert: InsertWebhookAlert): Promise<WebhookAlert>;
+  getWebhookAlerts(limit?: number): Promise<WebhookAlert[]>;
+  markAlertProcessed(id: number): Promise<void>;
+
+  // Published Predictions
+  createPublishedPrediction(pub: InsertPublishedPrediction): Promise<PublishedPrediction>;
+  getPublishedPredictions(): Promise<PublishedPrediction[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -223,12 +272,68 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePortfolio(data: Partial<Portfolio>): Promise<Portfolio | undefined> {
-    // Update the first (only) row
     const existing = db.select().from(portfolio).get();
     if (existing) {
       return db.update(portfolio).set(data).where(eq(portfolio.id, existing.id)).returning().get();
     }
     return undefined;
+  }
+
+  // Market Data
+  async getMarketData(ticker: string): Promise<MarketData[]> {
+    return db.select().from(marketData)
+      .where(eq(marketData.ticker, ticker.toUpperCase()))
+      .orderBy(marketData.date)
+      .all();
+  }
+
+  async getLatestMarketData(ticker: string): Promise<MarketData | undefined> {
+    return db.select().from(marketData)
+      .where(eq(marketData.ticker, ticker.toUpperCase()))
+      .orderBy(desc(marketData.date))
+      .get();
+  }
+
+  async upsertMarketData(data: InsertMarketData): Promise<MarketData> {
+    // Check if row exists for this ticker+date
+    const existing = db.select().from(marketData)
+      .where(and(eq(marketData.ticker, data.ticker), eq(marketData.date, data.date)))
+      .get();
+    if (existing) {
+      return db.update(marketData).set(data).where(eq(marketData.id, existing.id)).returning().get()!;
+    }
+    return db.insert(marketData).values(data).returning().get();
+  }
+
+  async seedMarketData(ticker: string, rows: InsertMarketData[]): Promise<void> {
+    for (const row of rows) {
+      await this.upsertMarketData({ ...row, ticker: ticker.toUpperCase() });
+    }
+  }
+
+  // Webhook Alerts
+  async createWebhookAlert(alert: InsertWebhookAlert): Promise<WebhookAlert> {
+    return db.insert(webhookAlerts).values(alert).returning().get();
+  }
+
+  async getWebhookAlerts(limit = 50): Promise<WebhookAlert[]> {
+    return db.select().from(webhookAlerts)
+      .orderBy(desc(webhookAlerts.receivedAt))
+      .limit(limit)
+      .all();
+  }
+
+  async markAlertProcessed(id: number): Promise<void> {
+    db.update(webhookAlerts).set({ processed: 1 }).where(eq(webhookAlerts.id, id)).run();
+  }
+
+  // Published Predictions
+  async createPublishedPrediction(pub: InsertPublishedPrediction): Promise<PublishedPrediction> {
+    return db.insert(publishedPredictions).values(pub).returning().get();
+  }
+
+  async getPublishedPredictions(): Promise<PublishedPrediction[]> {
+    return db.select().from(publishedPredictions).orderBy(desc(publishedPredictions.publishedAt)).all();
   }
 }
 

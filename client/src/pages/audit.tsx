@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
-import { History, Shield } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { History, Shield, Share2 } from "lucide-react";
 
 interface Prediction {
   id: number;
@@ -30,6 +33,8 @@ interface Opportunity {
 }
 
 export default function Audit() {
+  const { toast } = useToast();
+
   const { data: predictions, isLoading: predsLoading } = useQuery<Prediction[]>({
     queryKey: ["/api/predictions"],
   });
@@ -39,6 +44,28 @@ export default function Audit() {
   });
 
   const oppMap = new Map(opportunities?.map((o) => [o.id, o]) || []);
+
+  const publishMutation = useMutation({
+    mutationFn: (predictionId: number) =>
+      apiRequest("POST", "/api/publish", { predictionId, platform: "clipboard" }),
+    onSuccess: (data: any) => {
+      // Copy to clipboard
+      if (navigator.clipboard && data.content) {
+        navigator.clipboard.writeText(data.content).catch(() => {});
+      }
+      toast({
+        title: "Signal post copied to clipboard",
+        description: "Paste to LinkedIn/X to publish your signal",
+      });
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Publish failed",
+        description: e.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   if (predsLoading) {
     return (
@@ -101,13 +128,26 @@ export default function Audit() {
                       )}
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-[10px] text-muted-foreground font-mono block">
-                      {new Date(pred.timestamp).toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground/50 font-mono">
-                      ID: {pred.id}
-                    </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <span className="text-[10px] text-muted-foreground font-mono block">
+                        {new Date(pred.timestamp).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/50 font-mono">
+                        ID: {pred.id}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => publishMutation.mutate(pred.id)}
+                      disabled={publishMutation.isPending}
+                      data-testid={`button-publish-${pred.id}`}
+                    >
+                      <Share2 className="w-3 h-3" />
+                      Publish
+                    </Button>
                   </div>
                 </div>
 

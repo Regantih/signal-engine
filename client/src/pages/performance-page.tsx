@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { KpiCard } from "@/components/kpi-card";
 import { ActionBadge } from "@/components/conviction-badge";
-import { TrendingUp, TrendingDown, Target, BarChart3, DollarSign, Percent } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, BarChart3, DollarSign, Percent, Activity } from "lucide-react";
 
 interface Stats {
   totalOpportunities: number;
@@ -52,6 +53,28 @@ interface Opportunity {
   entryPrice: number | null;
 }
 
+interface LivePnlPosition {
+  opportunityId: number;
+  name: string;
+  ticker: string;
+  entryPrice: number;
+  currentPrice: number;
+  pnl: number;
+  pnlPercent: number;
+  allocation: number;
+  hasLiveData: boolean;
+}
+
+interface LivePnlResponse {
+  positions: LivePnlPosition[];
+  totals: {
+    totalPnl: number;
+    totalPnlPercent: number;
+    totalAllocated: number;
+    positionCount: number;
+  };
+}
+
 export default function PerformancePage() {
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ["/api/stats"],
@@ -63,6 +86,12 @@ export default function PerformancePage() {
 
   const { data: opportunities } = useQuery<Opportunity[]>({
     queryKey: ["/api/opportunities"],
+  });
+
+  const { data: livePnl, isLoading: pnlLoading } = useQuery<LivePnlResponse>({
+    queryKey: ["/api/live-pnl"],
+    queryFn: () => apiRequest("GET", "/api/live-pnl"),
+    refetchInterval: 30000,
   });
 
   const portfolio = stats?.portfolio;
@@ -93,6 +122,9 @@ export default function PerformancePage() {
       </div>
     );
   }
+
+  const totalPnl = livePnl?.totals.totalPnl ?? 0;
+  const totalPnlPercent = livePnl?.totals.totalPnlPercent ?? 0;
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
@@ -126,6 +158,104 @@ export default function PerformancePage() {
           value={`${portfolio?.winRate?.toFixed(1) || "0.0"}%`}
           icon={Percent}
         />
+      </div>
+
+      {/* Live P&L Section */}
+      <div className="bg-card border border-card-border rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-medium">Live Open Positions</h3>
+            <span className="text-xs text-muted-foreground/60 ml-1">
+              (refreshes every 30s)
+            </span>
+          </div>
+          {livePnl && livePnl.totals.positionCount > 0 && (
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <span className="text-xs text-muted-foreground block">Total Allocated</span>
+                <span className="text-sm font-mono tabular-nums">${livePnl.totals.totalAllocated.toFixed(2)}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-muted-foreground block">Live P&L</span>
+                <span className={`text-sm font-mono tabular-nums font-semibold ${totalPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                  {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)}
+                  <span className="text-xs ml-1 font-normal">
+                    ({totalPnlPercent >= 0 ? "+" : ""}{totalPnlPercent.toFixed(2)}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {pnlLoading ? (
+          <Skeleton className="h-32 rounded-md" />
+        ) : livePnl && livePnl.positions.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-live-pnl">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Name</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Ticker</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Entry</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Current</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Allocated</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">P&L $</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">P&L %</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {livePnl.positions.map((pos) => (
+                  <tr
+                    key={pos.opportunityId}
+                    className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                    data-testid={`row-pnl-${pos.opportunityId}`}
+                  >
+                    <td className="py-2 px-3 text-xs font-medium">{pos.name}</td>
+                    <td className="py-2 px-3 text-xs font-mono text-primary">{pos.ticker}</td>
+                    <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
+                      ${pos.entryPrice.toFixed(2)}
+                    </td>
+                    <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
+                      ${pos.currentPrice.toFixed(2)}
+                    </td>
+                    <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
+                      ${pos.allocation.toFixed(2)}
+                    </td>
+                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${pos.pnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {pos.pnl >= 0 ? "+" : ""}${pos.pnl.toFixed(2)}
+                    </td>
+                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${pos.pnlPercent >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      <span className="flex items-center justify-end gap-0.5">
+                        {pos.pnlPercent >= 0 ? (
+                          <TrendingUp className="w-3 h-3" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3" />
+                        )}
+                        {pos.pnlPercent >= 0 ? "+" : ""}{pos.pnlPercent.toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${pos.hasLiveData ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+                        {pos.hasLiveData ? "cached" : "entry"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-10 text-muted-foreground">
+            <Activity className="w-6 h-6 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No open buy positions</p>
+            <p className="text-xs mt-1 opacity-60">
+              Mark opportunities as BUY with entry prices and tickers to track live P&L
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Action Distribution */}
