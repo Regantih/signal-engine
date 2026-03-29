@@ -18,6 +18,7 @@ import News from "@/pages/news";
 import SettingsPage from "@/pages/settings-page";
 import Scanner from "@/pages/scanner";
 import Trading from "@/pages/trading";
+import Macro from "@/pages/macro";
 
 function AppRouter() {
   return (
@@ -25,6 +26,7 @@ function AppRouter() {
       <Route path="/" component={Dashboard} />
       <Route path="/scanner" component={Scanner} />
       <Route path="/trading" component={Trading} />
+      <Route path="/macro" component={Macro} />
       <Route path="/opportunities" component={Opportunities} />
       <Route path="/scoring" component={Scoring} />
       <Route path="/audit" component={Audit} />

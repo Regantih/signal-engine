@@ -9,6 +9,7 @@ import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
 import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
 import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position, type PortfolioRisk } from "./risk-manager";
+import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1342,6 +1343,20 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       );
 
       res.json({ decisions, portfolioRisk, timestamp: new Date().toISOString() });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // MACRO ENVIRONMENT
+  // ========================
+
+  // GET /api/macro — Get current macro environment snapshot
+  app.get("/api/macro", async (_req, res) => {
+    try {
+      const snapshot = fetchMacroSnapshot();
+      res.json(snapshot);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
