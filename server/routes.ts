@@ -6,6 +6,8 @@ import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 import { computeAutoSignals } from "./auto-signals";
 import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
+import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
+import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1065,6 +1067,222 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
 
       const opp = await addScannedOpportunity(ticker, name || ticker, screeners || []);
       res.json(opp);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // ALPACA TRADING
+  // ========================
+
+  app.get("/api/alpaca/status", async (_req, res) => {
+    try {
+      const connected = await isAlpacaConnected();
+      if (connected) {
+        const account = await getAccount();
+        res.json({
+          connected: true,
+          account: {
+            equity: account.equity,
+            buyingPower: account.buying_power,
+            cash: account.cash,
+            portfolioValue: account.portfolio_value,
+          },
+        });
+      } else {
+        res.json({ connected: false });
+      }
+    } catch (e: any) {
+      res.json({ connected: false, error: e.message });
+    }
+  });
+
+  app.get("/api/alpaca/positions", async (_req, res) => {
+    try {
+      const positions = await getPositions();
+      res.json({ positions });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/alpaca/orders", async (req, res) => {
+    try {
+      const status = (req.query.status as string) || "all";
+      const orders = await getOrders(status);
+      res.json({ orders });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/alpaca/execute/:id — Execute a BUY for an opportunity
+  app.post("/api/alpaca/execute/:id", async (req, res) => {
+    try {
+      const opp = await storage.getOpportunity(Number(req.params.id));
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+      if (!opp.ticker) return res.status(400).json({ error: "No ticker symbol" });
+      if (!opp.suggestedAllocation || opp.suggestedAllocation <= 0)
+        return res.status(400).json({ error: "No allocation — run Auto-Score first" });
+
+      const targetPrice = opp.targetPrice || opp.entryPrice! * 1.1;
+      const stopLoss = opp.stopLoss || opp.entryPrice! * 0.95;
+
+      const order = await placeBracketOrder(
+        opp.ticker,
+        opp.suggestedAllocation,
+        targetPrice,
+        stopLoss
+      );
+
+      // Update opportunity status
+      await storage.updateOpportunity(opp.id, {
+        status: "buy",
+        updatedAt: new Date().toISOString(),
+      });
+
+      res.json({
+        order,
+        message: `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/alpaca/sell/:id — Close position for an opportunity
+  app.post("/api/alpaca/sell/:id", async (req, res) => {
+    try {
+      const opp = await storage.getOpportunity(Number(req.params.id));
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+      if (!opp.ticker) return res.status(400).json({ error: "No ticker symbol" });
+
+      const result = await closePosition(opp.ticker);
+
+      await storage.updateOpportunity(opp.id, {
+        status: "closed",
+        updatedAt: new Date().toISOString(),
+      });
+
+      res.json({ result, message: `Position closed for ${opp.ticker}` });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/alpaca/close-all — Close all positions
+  app.post("/api/alpaca/close-all", async (_req, res) => {
+    try {
+      const result = await closeAllPositions();
+      res.json({ result, message: "All positions closed" });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // FEEDBACK & LEARNING
+  // ========================
+
+  // GET /api/feedback/outcomes — Evaluate all predictions
+  app.get("/api/feedback/outcomes", async (_req, res) => {
+    try {
+      const outcomes = await evaluateOutcomes();
+      const totalWins = outcomes.filter((o) => o.outcome === "win").length;
+      const totalLosses = outcomes.filter((o) => o.outcome === "loss").length;
+      const totalOpen = outcomes.filter((o) => o.outcome === "open").length;
+      const hitRate =
+        totalWins + totalLosses > 0
+          ? (totalWins / (totalWins + totalLosses)) * 100
+          : 0;
+
+      res.json({
+        outcomes,
+        summary: {
+          totalWins,
+          totalLosses,
+          totalOpen,
+          hitRate: Math.round(hitRate * 10) / 10,
+          total: outcomes.length,
+        },
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // GET /api/feedback/signal-accuracy — Per-signal hit rates
+  app.get("/api/feedback/signal-accuracy", async (_req, res) => {
+    try {
+      const outcomes = await evaluateOutcomes();
+      const accuracy = computeSignalAccuracy(outcomes);
+      res.json({ accuracy });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/feedback/auto-tune — Run weight optimization and apply
+  app.post("/api/feedback/auto-tune", async (_req, res) => {
+    try {
+      const outcomes = await evaluateOutcomes();
+      const newWeights = await autoTuneWeights(outcomes);
+
+      // Apply to all domains
+      const allWeights = await storage.getAllWeights();
+      for (const w of allWeights) {
+        await storage.updateWeights(w.domain, {
+          momentum: newWeights.momentum,
+          meanReversion: newWeights.meanReversion,
+          quality: newWeights.quality,
+          flow: newWeights.flow,
+          risk: newWeights.risk,
+          crowding: newWeights.crowding,
+        });
+      }
+
+      // Rescore all opportunities with new weights
+      const opps = await storage.getOpportunities();
+      const rescored = [];
+      for (const opp of opps) {
+        const portfolio = await storage.getPortfolio();
+        const budget = portfolio?.cashRemaining || 100;
+        const result = scoreOpportunity(
+          {
+            momentum: opp.momentum,
+            meanReversion: opp.meanReversion,
+            quality: opp.quality,
+            flow: opp.flow,
+            risk: opp.risk,
+            crowding: opp.crowding,
+          },
+          {
+            momentum: newWeights.momentum,
+            meanReversion: newWeights.meanReversion,
+            quality: newWeights.quality,
+            flow: newWeights.flow,
+            risk: newWeights.risk,
+            crowding: newWeights.crowding,
+          },
+          budget
+        );
+        const action = suggestAction(result);
+        await storage.updateOpportunity(opp.id, {
+          compositeScore: result.compositeScore,
+          probabilityOfSuccess: result.probabilityOfSuccess,
+          expectedEdge: result.expectedEdge,
+          kellyFraction: result.kellyFraction,
+          convictionBand: result.convictionBand,
+          suggestedAllocation: result.suggestedAllocation,
+          status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          updatedAt: new Date().toISOString(),
+        });
+        rescored.push({ id: opp.id, name: opp.name });
+      }
+
+      const signalAccuracy = computeSignalAccuracy(outcomes);
+      res.json({ newWeights, signalAccuracy, rescoredCount: rescored.length });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
