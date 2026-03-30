@@ -1201,6 +1201,21 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       if (!opp.ticker) return res.status(400).json({ error: "No ticker symbol" });
       if (!opp.suggestedAllocation || opp.suggestedAllocation <= 0)
         return res.status(400).json({ error: "No allocation — run Auto-Score first" });
+      
+      // Broker-aware order validation
+      const brokerMode = (await storage.getSetting("broker_mode"))?.value || "alpaca_fractional";
+      // alpaca_fractional: supports fractional shares, min $1 notional
+      // whole_shares: traditional broker, whole shares only
+      
+      if (brokerMode === "alpaca_fractional") {
+        // Alpaca: minimum $1 notional order
+        if (opp.suggestedAllocation < 1.00) {
+          return res.status(400).json({ error: `Allocation $${opp.suggestedAllocation.toFixed(2)} is below Alpaca minimum of $1.00` });
+        }
+      } else {
+        // Whole shares mode: need enough $ for at least 1 share
+        // We'll compute this after fetching the live price below
+      }
 
       // Kill switch check
       try {
@@ -1242,12 +1257,30 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         return res.status(400).json({ error: `Cannot determine current price for ${opp.ticker}. Run Auto-Score first.` });
       }
 
+      // Whole-share validation for traditional brokers
+      let orderQty: number | null = null; // null = use notional (fractional)
+      let orderNotional: number | null = opp.suggestedAllocation;
+      
+      if (brokerMode === "whole_shares") {
+        const wholeShares = Math.floor(opp.suggestedAllocation / currentPrice);
+        if (wholeShares < 1) {
+          return res.status(400).json({
+            error: `Cannot buy whole shares: $${opp.suggestedAllocation.toFixed(2)} allocation ÷ $${currentPrice.toFixed(2)} per share = ${(opp.suggestedAllocation / currentPrice).toFixed(4)} shares. Need at least $${currentPrice.toFixed(2)} for 1 share. Increase budget or choose a lower-priced stock.`,
+            requiredForOneShare: currentPrice,
+            currentAllocation: opp.suggestedAllocation,
+            fractionalShares: Math.round((opp.suggestedAllocation / currentPrice) * 10000) / 10000,
+          });
+        }
+        orderQty = wholeShares;
+        orderNotional = null; // use qty instead of notional
+      }
+
       const targetPrice = opp.targetPrice || currentPrice * 1.1;
       const stopLoss = opp.stopLoss || currentPrice * 0.95;
 
       const order = await placeBracketOrder(
         opp.ticker,
-        opp.suggestedAllocation,
+        orderNotional || (orderQty! * currentPrice), // dollar amount
         targetPrice,
         stopLoss
       );
@@ -1264,8 +1297,14 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
 
       res.json({
         order,
-        message: `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} at $${currentPrice.toFixed(2)} with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
+        message: brokerMode === "whole_shares"
+          ? `Bracket order placed: ${orderQty} share(s) of ${opp.ticker} at $${currentPrice.toFixed(2)} ($${(orderQty! * currentPrice).toFixed(2)}) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`
+          : `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} at $${currentPrice.toFixed(2)} (${(opp.suggestedAllocation / currentPrice).toFixed(4)} fractional shares) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
         executionPrice: currentPrice,
+        brokerMode,
+        shares: brokerMode === "whole_shares" ? orderQty : Math.round((opp.suggestedAllocation / currentPrice) * 10000) / 10000,
+        wholeSharesOnly: brokerMode === "whole_shares",
+        notionalValue: brokerMode === "whole_shares" ? (orderQty! * currentPrice) : opp.suggestedAllocation,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
