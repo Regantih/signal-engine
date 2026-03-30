@@ -13,21 +13,7 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
   }
 }
 
-function parseCSVContent(content: string): Record<string, string>[] {
-  const lines = content.split("\n").filter(l => l.trim().startsWith("|"));
-  if (lines.length < 2) return [];
-  const headers = lines[0].split("|").map(h => h.trim()).filter(Boolean);
-  const rows: Record<string, string>[] = [];
-  for (let i = 2; i < lines.length; i++) {
-    const cells = lines[i].split("|").map(c => c.trim()).filter(Boolean);
-    if (cells.length === headers.length) {
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => row[h] = cells[idx]);
-      rows.push(row);
-    }
-  }
-  return rows;
-}
+import { parseCSVContent } from "./csv-parser";
 
 // --- CRYPTO ---
 export interface CryptoSnapshot {

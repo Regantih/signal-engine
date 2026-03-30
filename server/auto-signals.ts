@@ -37,24 +37,7 @@ function clamp(value: number, min: number = 0, max: number = 100): number {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-function parseCSVContent(content: string): Record<string, string>[] {
-  // Parse markdown table from the content string
-  const lines = content.split("\n").filter(l => l.trim().startsWith("|"));
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split("|").map(h => h.trim()).filter(Boolean);
-  const rows: Record<string, string>[] = [];
-
-  for (let i = 2; i < lines.length; i++) { // skip header + separator
-    const cells = lines[i].split("|").map(c => c.trim()).filter(Boolean);
-    if (cells.length === headers.length) {
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => row[h] = cells[idx]);
-      rows.push(row);
-    }
-  }
-  return rows;
-}
+import { parseCSVContent } from "./csv-parser";
 
 function computeMomentum(priceHistory: Array<{ close: number; volume?: number }>): { score: number; data: any } {
   if (priceHistory.length < 30) return { score: 50, data: { reason: "insufficient data" } };

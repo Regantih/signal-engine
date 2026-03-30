@@ -41,21 +41,7 @@ export function refreshCredentials() {
   if (endpoint) latestEnv.ASI_EXTERNAL_TOOLS_ENDPOINT = endpoint;
 }
 
-function parseCSVContent(content: string): Record<string, string>[] {
-  const lines = content.split("\n").filter(l => l.trim().startsWith("|"));
-  if (lines.length < 2) return [];
-  const headers = lines[0].split("|").map(h => h.trim()).filter(Boolean);
-  const rows: Record<string, string>[] = [];
-  for (let i = 2; i < lines.length; i++) {
-    const cells = lines[i].split("|").map(c => c.trim()).filter(Boolean);
-    if (cells.length === headers.length) {
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => row[h] = cells[idx]);
-      rows.push(row);
-    }
-  }
-  return rows;
-}
+import { parseCSVContent } from "./csv-parser";
 
 // Broadcast to all connected SSE clients
 function broadcast(event: string, data: any) {

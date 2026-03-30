@@ -21,23 +21,7 @@ function callFinanceTool(toolName: string, args: Record<string, any>): any {
   }
 }
 
-function parseCSVContent(content: string): Record<string, string>[] {
-  const lines = content.split("\n").filter((l) => l.trim().startsWith("|"));
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split("|").map((h) => h.trim()).filter(Boolean);
-  const rows: Record<string, string>[] = [];
-
-  for (let i = 2; i < lines.length; i++) {
-    const cells = lines[i].split("|").map((c) => c.trim()).filter(Boolean);
-    if (cells.length === headers.length) {
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => (row[h] = cells[idx]));
-      rows.push(row);
-    }
-  }
-  return rows;
-}
+import { parseCSVContent } from "./csv-parser";
 
 function parseNumber(s: string | undefined): number {
   if (!s) return 0;
@@ -198,21 +182,29 @@ function buildSummary(snapshot: Omit<MacroSnapshot, "summary">): string {
 
 function extractMacroValue(
   rows: Record<string, string>[],
-  keywords: string[],
+  exactCategories: string[],
+  fallbackKeywords: string[],
 ): number | null {
+  // First try exact category match
+  for (const row of rows) {
+    const category = (row["category"] || row["Category"] || "").toLowerCase().trim();
+    const matchesExact = exactCategories.some((cat) => category === cat.toLowerCase());
+    if (!matchesExact) continue;
+
+    const valStr = row["latest_value"] || row["Latest Value"] || row["value"] || row["Value"] || "";
+    const num = parseFloat(valStr.replace(/[$%,\s]/g, ""));
+    if (!isNaN(num) && isFinite(num)) return num;
+  }
+
+  // Fallback: keyword search in all columns
   for (const row of rows) {
     const rowStr = JSON.stringify(row).toLowerCase();
-    const matchesKeyword = keywords.some((kw) => rowStr.includes(kw.toLowerCase()));
+    const matchesKeyword = fallbackKeywords.some((kw) => rowStr.includes(kw.toLowerCase()));
     if (!matchesKeyword) continue;
 
-    // Look for a numeric value in any column
-    for (const val of Object.values(row)) {
-      const cleaned = val.replace(/[$%,\s]/g, "");
-      const num = parseFloat(cleaned);
-      if (!isNaN(num) && isFinite(num) && num !== 0) {
-        return num;
-      }
-    }
+    const valStr = row["latest_value"] || row["Latest Value"] || row["value"] || row["Value"] || "";
+    const num = parseFloat(valStr.replace(/[$%,\s]/g, ""));
+    if (!isNaN(num) && isFinite(num) && num !== 0) return num;
   }
   return null;
 }
@@ -314,10 +306,10 @@ export function fetchMacroSnapshot(): MacroSnapshot {
 
   if (macroResp?.content) {
     const rows = parseCSVContent(macroResp.content);
-    gdpGrowth = extractMacroValue(rows, ["gdp", "growth"]);
-    inflationRate = extractMacroValue(rows, ["inflation", "cpi"]);
-    interestRate = extractMacroValue(rows, ["interest rate", "fed", "federal funds"]);
-    unemploymentRate = extractMacroValue(rows, ["unemployment", "jobless"]);
+    gdpGrowth = extractMacroValue(rows, ["GDP Growth Rate", "GDP Annual Growth Rate"], ["gdp", "growth"]);
+    inflationRate = extractMacroValue(rows, ["Inflation Rate"], ["inflation", "cpi"]);
+    interestRate = extractMacroValue(rows, ["Interest Rate"], ["interest rate", "fed"]);
+    unemploymentRate = extractMacroValue(rows, ["Unemployment Rate"], ["unemployment rate"]);
   }
 
   // ── Compute regime ──
