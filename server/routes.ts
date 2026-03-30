@@ -1216,8 +1216,34 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         return res.status(429).json({ error: rateCheck.reason });
       }
 
-      const targetPrice = opp.targetPrice || opp.entryPrice! * 1.1;
-      const stopLoss = opp.stopLoss || opp.entryPrice! * 0.95;
+      // CRITICAL: Fetch CURRENT market price for execution, not stale entry price
+      let currentPrice = opp.entryPrice || 0;
+      try {
+        const signals = computeAutoSignals(opp.ticker);
+        if (signals?.metadata?.price && signals.metadata.price > 0) {
+          currentPrice = signals.metadata.price;
+          // Update opportunity with fresh price and signals
+          await storage.updateOpportunity(opp.id, {
+            entryPrice: currentPrice,
+            momentum: signals.momentum,
+            meanReversion: signals.meanReversion,
+            quality: signals.quality,
+            flow: signals.flow,
+            risk: signals.risk,
+            crowding: signals.crowding,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.error(`[execute] Failed to fetch live price for ${opp.ticker}, using stored price $${currentPrice}`);
+      }
+
+      if (currentPrice <= 0) {
+        return res.status(400).json({ error: `Cannot determine current price for ${opp.ticker}. Run Auto-Score first.` });
+      }
+
+      const targetPrice = opp.targetPrice || currentPrice * 1.1;
+      const stopLoss = opp.stopLoss || currentPrice * 0.95;
 
       const order = await placeBracketOrder(
         opp.ticker,
@@ -1229,15 +1255,17 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       // Record the trade after successful placement
       rateLimiter.recordTrade(opp.ticker!);
 
-      // Update opportunity status
+      // Update opportunity status with LIVE entry price
       await storage.updateOpportunity(opp.id, {
         status: "buy",
+        entryPrice: currentPrice,
         updatedAt: new Date().toISOString(),
       });
 
       res.json({
         order,
-        message: `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
+        message: `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} at $${currentPrice.toFixed(2)} with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
+        executionPrice: currentPrice,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
