@@ -162,3 +162,45 @@ The key sections to customize when re-running:
 | Crowding | Fixed per-ticker estimate (35–75, with overrides) |
 
 All signals are Z-score normalized (assumed mean=50, sd=16.67) before weighting.
+
+## Integration with the Live TypeScript App
+
+Optimized parameters flow from the Python autoresearch loop into the live Signal Engine web application:
+
+```
+engine.py (PARAMS) → export_params.py → server/autoresearch-params.ts → scoring-engine.ts
+```
+
+### How It Works
+
+1. **Automatic export**: After each successful "keep" in `run_experiment.py`, `export_params.py` runs automatically and regenerates:
+   - `autoresearch/optimized-params.json` — machine-readable snapshot
+   - `server/autoresearch-params.ts` — typed TypeScript constants
+
+2. **Feature flag**: `scoring-engine.ts` imports the optimized params behind a `USE_OPTIMIZED_PARAMS` flag (default: `false`). When enabled, all scoring functions (zScore, logisticSigmoid, empiricalProbability, fractionalKelly) use the autoresearch-optimized values instead of hardcoded defaults.
+
+3. **Manual export**: You can also run the export manually:
+   ```bash
+   python autoresearch/export_params.py
+   ```
+
+### Enabling Optimized Params in Production
+
+In `server/scoring-engine.ts`, change:
+```typescript
+export const USE_OPTIMIZED_PARAMS = true;
+```
+
+This switches all scoring functions to use the autoresearch-optimized parameters. The existing hardcoded values remain as fallback when the flag is off.
+
+### Parameter Mapping (Python → TypeScript)
+
+| Python (engine.py) | TypeScript (autoresearch-params.ts) |
+|---|---|
+| `WEIGHT_*` → `weights` dict | `OPTIMIZED_WEIGHTS` |
+| `ZSCORE_MEAN`, `ZSCORE_SD` | `OPTIMIZED_ZSCORE` |
+| `SIGMOID_STEEPNESS` | `OPTIMIZED_SIGMOID_STEEPNESS` |
+| `KELLY_FRACTION`, `MAX_POSITION_PCT`, `PAYOFF_RATIO` | `OPTIMIZED_KELLY` |
+| `TRANSACTION_COST_BPS`, `SLIPPAGE_BPS` | `OPTIMIZED_COSTS` |
+| `BUY_PROB_THRESHOLD`, `BUY_EDGE_THRESHOLD` | `OPTIMIZED_THRESHOLDS` |
+| `EMPIRICAL_PROB_MAP` | `OPTIMIZED_EMPIRICAL_PROB_MAP` |

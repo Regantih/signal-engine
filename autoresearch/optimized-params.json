@@ -1,0 +1,65 @@
+{
+  "weights": {
+    "momentum": 0.2,
+    "mean_reversion": 0.15,
+    "quality": 0.25,
+    "flow": 0.15,
+    "risk": 0.15,
+    "crowding": 0.1
+  },
+  "zscore_mean": 50.0,
+  "zscore_sd": 16.67,
+  "sigmoid_steepness": 1.5,
+  "kelly_fraction": 0.25,
+  "max_position_pct": 0.15,
+  "payoff_ratio": 2.0,
+  "transaction_cost_bps": 10.0,
+  "slippage_bps": 5.0,
+  "trailing_stop_pct": 3.0,
+  "take_profit_pct": 8.0,
+  "momentum_reversal_threshold_pct": -5.0,
+  "momentum_reversal_min_pnl_pct": 2.0,
+  "breakeven_buffer_pct": 0.5,
+  "max_hold_weeks": 6,
+  "kill_switch_drawdown_pct": 10.0,
+  "buy_prob_threshold": 0.55,
+  "buy_edge_threshold": 0.1,
+  "crowding_override": {
+    "TSLA": 65,
+    "PLTR": 70
+  },
+  "empirical_prob_map": [
+    [
+      1.0,
+      0.72
+    ],
+    [
+      0.8,
+      0.68
+    ],
+    [
+      0.5,
+      0.62
+    ],
+    [
+      0.3,
+      0.56
+    ],
+    [
+      0.1,
+      0.52
+    ],
+    [
+      0.0,
+      0.48
+    ],
+    [
+      -0.3,
+      0.42
+    ],
+    [
+      -999,
+      0.35
+    ]
+  ]
+}

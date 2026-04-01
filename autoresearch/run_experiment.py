@@ -49,6 +49,7 @@ ENGINE_PY    = SCRIPT_DIR / "engine.py"
 RESULTS_TSV  = SCRIPT_DIR / "results.tsv"
 RUN_LOG      = SCRIPT_DIR / "run.log"
 PREPARE_PY   = SCRIPT_DIR / "prepare.py"
+EXPORT_PY    = SCRIPT_DIR / "export_params.py"
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +173,25 @@ def git_current_hash() -> str:
     return result.stdout.strip()
 
 
+def run_export_params() -> bool:
+    """Run export_params.py to regenerate JSON and TypeScript param files.
+    Returns True on success."""
+    if not EXPORT_PY.exists():
+        return False
+    result = subprocess.run(
+        [sys.executable, str(EXPORT_PY)],
+        cwd=str(SCRIPT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        print(f"  → Exported params: {result.stdout.strip()}")
+        return True
+    else:
+        print(f"  → Warning: export_params.py failed: {result.stderr.strip()}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # TSV logging
 # ---------------------------------------------------------------------------
@@ -291,6 +311,7 @@ def run_manual_mode(n_experiments: int) -> None:
             best_sharpe = metrics["sharpe_ratio"]
             log_result(h, metrics, "keep", desc)
             print(f"  → KEEP (new best! sharpe={best_sharpe:.3f})")
+            run_export_params()
         else:
             if not passes:
                 print(f"  → DISCARD (constraint violated: {reason})")
@@ -457,6 +478,7 @@ Please propose and implement ONE experiment. Return the COMPLETE new engine.py c
             best_sharpe = metrics["sharpe_ratio"]
             log_result(h, metrics, "keep", description)
             print(f"  → KEEP  (new best! sharpe={best_sharpe:.3f})")
+            run_export_params()
         else:
             if not passes:
                 print(f"  → DISCARD (constraint: {reason})")

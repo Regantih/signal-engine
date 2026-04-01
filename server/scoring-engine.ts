@@ -1,12 +1,28 @@
 /**
  * Renaissance-Style Signal Aggregation & Scoring Engine
- * 
+ *
  * Core formula:
  * Score_i = w1*Z(momentum) + w2*Z(mean_reversion) + w3*Z(quality) + w4*Z(flow) - w5*Z(risk) - w6*Z(crowding)
- * 
+ *
  * Then converts to probability via logistic sigmoid, computes expected edge,
  * and applies fractional Kelly for position sizing.
  */
+
+import {
+  OPTIMIZED_WEIGHTS,
+  OPTIMIZED_ZSCORE,
+  OPTIMIZED_SIGMOID_STEEPNESS,
+  OPTIMIZED_KELLY,
+  OPTIMIZED_EMPIRICAL_PROB_MAP,
+  OPTIMIZED_THRESHOLDS,
+} from "./autoresearch-params";
+
+/**
+ * Feature flag: when true, scoring functions use autoresearch-optimized
+ * parameters instead of hardcoded defaults. Default false for safety —
+ * flip to true after validating optimized params in staging.
+ */
+export const USE_OPTIMIZED_PARAMS = false;
 
 interface SignalInputs {
   momentum: number;      // 0-100: trend strength, earnings drift, funding velocity
@@ -42,8 +58,8 @@ export interface ScoringResult {
  * Assumes population mean=50, sd=16.67 (so that 0 and 100 are ~3 SDs)
  */
 function zScore(value: number): number {
-  const mean = 50;
-  const sd = 16.67;
+  const mean = USE_OPTIMIZED_PARAMS ? OPTIMIZED_ZSCORE.mean : 50;
+  const sd = USE_OPTIMIZED_PARAMS ? OPTIMIZED_ZSCORE.sd : 16.67;
   return (value - mean) / sd;
 }
 
@@ -51,8 +67,9 @@ function zScore(value: number): number {
  * Logistic sigmoid: converts raw score to probability [0, 1]
  * Steepness parameter controls how quickly score maps to certainty
  */
-function logisticSigmoid(score: number, steepness: number = 1.5): number {
-  return 1 / (1 + Math.exp(-steepness * score));
+function logisticSigmoid(score: number, steepness?: number): number {
+  const s = steepness ?? (USE_OPTIMIZED_PARAMS ? OPTIMIZED_SIGMOID_STEEPNESS : 1.5);
+  return 1 / (1 + Math.exp(-s * score));
 }
 
 /**
@@ -60,16 +77,24 @@ function logisticSigmoid(score: number, steepness: number = 1.5): number {
  * Instead of trusting the sigmoid directly, map composite score ranges
  * to observed historical hit rates. This prevents Kelly from using
  * synthetic probabilities.
- * 
+ *
  * Based on backtest data (303 trades, 12 months):
  * - High composite (>0.8): ~70% hit rate
  * - Medium composite (0.3-0.8): ~58% hit rate
  * - Low composite (0-0.3): ~50% hit rate
  * - Negative composite (<0): ~40% hit rate
- * 
+ *
  * These should be updated as more forward-test data accumulates.
  */
 function empiricalProbability(compositeScore: number): number {
+  if (USE_OPTIMIZED_PARAMS) {
+    for (const [threshold, prob] of OPTIMIZED_EMPIRICAL_PROB_MAP) {
+      if (compositeScore > threshold) return prob;
+    }
+    return OPTIMIZED_EMPIRICAL_PROB_MAP[OPTIMIZED_EMPIRICAL_PROB_MAP.length - 1][1];
+  }
+
+  // Hardcoded defaults (fallback)
   if (compositeScore > 1.0) return 0.72;
   if (compositeScore > 0.8) return 0.68;
   if (compositeScore > 0.5) return 0.62;
@@ -90,14 +115,18 @@ function empiricalProbability(compositeScore: number): number {
  */
 function fractionalKelly(
   probability: number,
-  payoffRatio: number = 2.0,    // 2:1 reward-to-risk default
-  kellyMultiplier: number = 0.25 // Quarter-Kelly for safety
+  payoffRatio?: number,
+  kellyMultiplier?: number
 ): number {
-  const numerator = probability * payoffRatio - (1 - probability);
-  const fraction = (numerator / payoffRatio) * kellyMultiplier;
-  
-  // Clamp: no negative positions, max 15% of portfolio (reduced from 25%)
-  return Math.max(0, Math.min(fraction, 0.15));
+  const b = payoffRatio ?? (USE_OPTIMIZED_PARAMS ? OPTIMIZED_KELLY.payoffRatio : 2.0);
+  const c = kellyMultiplier ?? (USE_OPTIMIZED_PARAMS ? OPTIMIZED_KELLY.fraction : 0.25);
+  const maxPos = USE_OPTIMIZED_PARAMS ? OPTIMIZED_KELLY.maxPositionPct : 0.15;
+
+  const numerator = probability * b - (1 - probability);
+  const fraction = (numerator / b) * c;
+
+  // Clamp: no negative positions, max position cap
+  return Math.max(0, Math.min(fraction, maxPos));
 }
 
 /**
@@ -117,43 +146,49 @@ export function scoreOpportunity(
   const zRisk = zScore(signals.risk);
   const zCrowding = zScore(signals.crowding);
 
+  // Use optimized weights when flag is enabled, otherwise use passed-in weights
+  const w = USE_OPTIMIZED_PARAMS ? OPTIMIZED_WEIGHTS : weights;
+
   // Step 2: Compute weighted composite score
   // Positive signals: momentum, mean_reversion, quality, flow
   // Negative signals: risk, crowding (these are PENALTIES)
-  const compositeScore = 
-    weights.momentum * zMomentum +
-    weights.meanReversion * zMeanReversion +
-    weights.quality * zQuality +
-    weights.flow * zFlow -
-    weights.risk * zRisk -
-    weights.crowding * zCrowding;
+  const compositeScore =
+    w.momentum * zMomentum +
+    w.meanReversion * zMeanReversion +
+    w.quality * zQuality +
+    w.flow * zFlow -
+    w.risk * zRisk -
+    w.crowding * zCrowding;
 
   // Step 3: Convert to probability via empirical calibration
   // Use empirical calibration instead of raw sigmoid
   // Sigmoid is kept for relative ranking but not used for Kelly sizing
   const rawProbability = empiricalProbability(compositeScore);
   const sigmoidScore = logisticSigmoid(compositeScore); // kept for display only
-  
+
   // Step 4: Compute expected edge (net of transaction costs)
   const transactionCost = transactionCostBps / 10000;
-  const payoffRatio = 2.0; // Assume 2:1 reward-to-risk
+  const payoffRatio = USE_OPTIMIZED_PARAMS ? OPTIMIZED_KELLY.payoffRatio : 2.0;
   const expectedEdge = rawProbability * payoffRatio - (1 - rawProbability) - transactionCost;
 
   // Step 5: Downside risk penalty
-  const downsideRisk = (weights.risk * zRisk + weights.crowding * zCrowding) / 
-    (weights.risk + weights.crowding);
+  const downsideRisk = (w.risk * zRisk + w.crowding * zCrowding) /
+    (w.risk + w.crowding);
 
-  // Step 6: Fractional Kelly position sizing (quarter-Kelly, capped at 15%)
-  const kellyFraction = fractionalKelly(rawProbability, payoffRatio, 0.25);
+  // Step 6: Fractional Kelly position sizing
+  const kellyFraction = fractionalKelly(rawProbability, payoffRatio);
 
   // Step 7: Dollar allocation from budget
   const suggestedAllocation = Math.round(kellyFraction * budget * 100) / 100;
 
   // Step 8: Conviction band
+  const probThreshold = USE_OPTIMIZED_PARAMS ? OPTIMIZED_THRESHOLDS.buyProbThreshold : 0.55;
+  const edgeThreshold = USE_OPTIMIZED_PARAMS ? OPTIMIZED_THRESHOLDS.buyEdgeThreshold : 0.10;
+
   let convictionBand: string;
   if (rawProbability >= 0.70 && expectedEdge > 0.3) {
     convictionBand = "high";
-  } else if (rawProbability >= 0.55 && expectedEdge > 0.1) {
+  } else if (rawProbability >= probThreshold && expectedEdge > edgeThreshold) {
     convictionBand = "medium";
   } else if (rawProbability >= 0.45 && expectedEdge > 0) {
     convictionBand = "low";
@@ -162,21 +197,21 @@ export function scoreOpportunity(
   }
 
   // Step 9: Signal contribution breakdown (for explainability)
-  const totalAbsWeight = 
-    Math.abs(weights.momentum * zMomentum) +
-    Math.abs(weights.meanReversion * zMeanReversion) +
-    Math.abs(weights.quality * zQuality) +
-    Math.abs(weights.flow * zFlow) +
-    Math.abs(weights.risk * zRisk) +
-    Math.abs(weights.crowding * zCrowding);
+  const totalAbsWeight =
+    Math.abs(w.momentum * zMomentum) +
+    Math.abs(w.meanReversion * zMeanReversion) +
+    Math.abs(w.quality * zQuality) +
+    Math.abs(w.flow * zFlow) +
+    Math.abs(w.risk * zRisk) +
+    Math.abs(w.crowding * zCrowding);
 
   const signalContributions = totalAbsWeight > 0 ? {
-    momentum: (weights.momentum * zMomentum) / totalAbsWeight,
-    meanReversion: (weights.meanReversion * zMeanReversion) / totalAbsWeight,
-    quality: (weights.quality * zQuality) / totalAbsWeight,
-    flow: (weights.flow * zFlow) / totalAbsWeight,
-    risk: -(weights.risk * zRisk) / totalAbsWeight,
-    crowding: -(weights.crowding * zCrowding) / totalAbsWeight,
+    momentum: (w.momentum * zMomentum) / totalAbsWeight,
+    meanReversion: (w.meanReversion * zMeanReversion) / totalAbsWeight,
+    quality: (w.quality * zQuality) / totalAbsWeight,
+    flow: (w.flow * zFlow) / totalAbsWeight,
+    risk: -(w.risk * zRisk) / totalAbsWeight,
+    crowding: -(w.crowding * zCrowding) / totalAbsWeight,
   } : {
     momentum: 0, meanReversion: 0, quality: 0, flow: 0, risk: 0, crowding: 0,
   };
@@ -214,7 +249,7 @@ export function computePriceLevels(
   // Target: entry * (1 + expected upside based on probability)
   const expectedUpside = probabilityOfSuccess * payoffRatio * 0.1; // Scale to reasonable %
   const targetPrice = Math.round(entryPrice * (1 + expectedUpside) * 100) / 100;
-  
+
   // Stop loss: entry * (1 - risk-adjusted downside)
   const downsideRisk = (1 - probabilityOfSuccess) * 0.1;
   const stopLoss = Math.round(entryPrice * (1 - downsideRisk) * 100) / 100;
