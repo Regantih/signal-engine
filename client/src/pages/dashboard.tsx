@@ -47,6 +47,8 @@ interface Opportunity {
   expectedEdge: number | null;
   convictionBand: string | null;
   suggestedAllocation: number | null;
+  targetPrice: number | null;
+  stopLoss: number | null;
   status: string;
   momentum: number;
   meanReversion: number;
@@ -243,6 +245,11 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Autopilot info banner */}
+      <div className="px-4 py-2.5 bg-primary/5 border border-primary/20 rounded-lg text-xs text-muted-foreground">
+        Allocations are recalculated every 5 minutes. Sell targets and stops are monitored continuously.
+      </div>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
         <KpiCard
@@ -362,6 +369,8 @@ export default function Dashboard() {
                   <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Edge</th>
                   <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Conviction</th>
                   <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Allocation</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Target</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Stop</th>
                   <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Action</th>
                 </tr>
               </thead>
@@ -393,6 +402,12 @@ export default function Dashboard() {
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
                       ${opp.suggestedAllocation?.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-emerald-600">
+                      {opp.targetPrice ? `$${opp.targetPrice.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-red-500">
+                      {opp.stopLoss ? `$${opp.stopLoss.toFixed(2)}` : "—"}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <ActionBadge action={opp.status.toUpperCase()} />

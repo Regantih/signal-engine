@@ -484,6 +484,18 @@ export default function Opportunities() {
                       ${opp.suggestedAllocation?.toFixed(2) ?? "0.00"}
                     </p>
                   </div>
+                  <div className="text-right">
+                    <span className="text-xs text-muted-foreground">Target</span>
+                    <p className="text-sm tabular-nums font-mono font-medium text-emerald-600">
+                      {opp.targetPrice ? `$${opp.targetPrice.toFixed(2)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-muted-foreground">Stop</span>
+                    <p className="text-sm tabular-nums font-mono font-medium text-red-500">
+                      {opp.stopLoss ? `$${opp.stopLoss.toFixed(2)}` : "—"}
+                    </p>
+                  </div>
                   {opp.convictionBand && <ConvictionBadge band={opp.convictionBand} size="md" />}
                   <ActionBadge action={opp.status.toUpperCase()} />
                 </div>

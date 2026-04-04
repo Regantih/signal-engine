@@ -257,6 +257,75 @@ async function runAutopilot(): Promise<void> {
       console.error(`[autopilot] Paper trade auto-execution error: ${e.message}`);
     }
 
+    // ── Sell-check loop: monitor open paper positions for exit conditions ──
+    try {
+      const paperPositions = await getPaperPositions();
+      const openPositions = paperPositions.filter(p => p.status === "open");
+
+      if (openPositions.length > 0) {
+        console.log(`[autopilot] Checking ${openPositions.length} open paper positions for sell rules...`);
+        const freshOpps = await storage.getOpportunities();
+
+        for (const pos of openPositions) {
+          const currentPrice = pos.currentPrice ?? pos.avgEntryPrice;
+          if (!currentPrice || currentPrice <= 0) continue;
+
+          // Find matching opportunity for target/stop levels
+          const opp = freshOpps.find(o => o.ticker?.toUpperCase() === pos.ticker.toUpperCase());
+          const stopLoss = opp?.stopLoss ?? null;
+          const targetPrice = opp?.targetPrice ?? null;
+          const entryPrice = pos.avgEntryPrice;
+
+          // Track high water mark (peak price since entry)
+          const highWaterMark = Math.max(entryPrice, currentPrice);
+          const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+          const drawdownFromPeak = ((highWaterMark - currentPrice) / highWaterMark) * 100;
+
+          // Hold duration in weeks
+          const holdDays = Math.ceil((Date.now() - new Date(pos.openedAt).getTime()) / 86400000);
+          const holdWeeks = holdDays / 7;
+
+          let sellReason: string | null = null;
+
+          // Rule 1: Stop loss hit
+          if (stopLoss && currentPrice <= stopLoss) {
+            sellReason = `trailing stop hit at $${currentPrice.toFixed(2)} (stop $${stopLoss.toFixed(2)}, entry $${entryPrice.toFixed(2)})`;
+          }
+          // Rule 2: Take profit hit
+          else if (targetPrice && currentPrice >= targetPrice) {
+            sellReason = `take profit hit at $${currentPrice.toFixed(2)} (target $${targetPrice.toFixed(2)}, entry $${entryPrice.toFixed(2)})`;
+          }
+          // Rule 3: Max hold period (6 weeks)
+          else if (holdWeeks > 6) {
+            sellReason = `max hold period exceeded (${holdWeeks.toFixed(1)} weeks, entry $${entryPrice.toFixed(2)})`;
+          }
+          // Rule 4: Trailing stop from high water mark (-2.5% from peak)
+          else if (drawdownFromPeak > 2.5 && pnlPct < 0) {
+            sellReason = `trailing stop from peak: -${drawdownFromPeak.toFixed(1)}% from high (entry $${entryPrice.toFixed(2)})`;
+          }
+
+          if (sellReason) {
+            try {
+              await executePaperTrade(pos.ticker, "SELL", pos.shares, currentPrice);
+              console.log(`[autopilot] Auto-sold ${pos.ticker}: ${sellReason}`);
+
+              // Update opportunity status to "sell" if matched
+              if (opp) {
+                await storage.updateOpportunity(opp.id, {
+                  status: "sell",
+                  updatedAt: new Date().toISOString(),
+                });
+              }
+            } catch (e: any) {
+              console.error(`[autopilot] Error auto-selling ${pos.ticker}: ${e.message}`);
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[autopilot] Sell-check error: ${e.message}`);
+    }
+
     // Auto-seed price history for all tracked tickers
     const trackedTickers = Array.from(new Set(marketOpps.map(o => o.ticker!.toUpperCase())));
     console.log(`[autopilot] Seeding price history for ${trackedTickers.length} tickers...`);
