@@ -2,10 +2,10 @@
 // Generated from engine.py PARAMS (Sharpe-optimized)
 
 export const OPTIMIZED_WEIGHTS = {
-  momentum: 0.2,
-  meanReversion: 0.15,
-  quality: 0.25,
-  flow: 0.15,
+  momentum: 0.4,
+  meanReversion: 0.1,
+  quality: 0.15,
+  flow: 0.1,
   risk: 0.15,
   crowding: 0.1,
 } as const;

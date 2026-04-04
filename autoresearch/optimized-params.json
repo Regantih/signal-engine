@@ -1,9 +1,9 @@
 {
   "weights": {
-    "momentum": 0.2,
-    "mean_reversion": 0.15,
-    "quality": 0.25,
-    "flow": 0.15,
+    "momentum": 0.4,
+    "mean_reversion": 0.1,
+    "quality": 0.15,
+    "flow": 0.1,
     "risk": 0.15,
     "crowding": 0.1
   },
@@ -15,10 +15,10 @@
   "payoff_ratio": 2.0,
   "transaction_cost_bps": 10.0,
   "slippage_bps": 5.0,
-  "trailing_stop_pct": 3.0,
-  "take_profit_pct": 8.0,
-  "momentum_reversal_threshold_pct": -5.0,
-  "momentum_reversal_min_pnl_pct": 2.0,
+  "trailing_stop_pct": 2.5,
+  "take_profit_pct": 11.0,
+  "momentum_reversal_threshold_pct": -4.0,
+  "momentum_reversal_min_pnl_pct": 3.0,
   "breakeven_buffer_pct": 0.5,
   "max_hold_weeks": 6,
   "kill_switch_drawdown_pct": 10.0,

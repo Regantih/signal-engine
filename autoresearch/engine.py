@@ -27,10 +27,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # SIGNAL WEIGHTS — must sum to 1.0
 # ---------------------------------------------------------------------------
 
-WEIGHT_MOMENTUM       = 0.20
-WEIGHT_MEAN_REVERSION = 0.15
-WEIGHT_QUALITY        = 0.25
-WEIGHT_FLOW           = 0.15
+WEIGHT_MOMENTUM       = 0.40
+WEIGHT_MEAN_REVERSION = 0.10
+WEIGHT_QUALITY        = 0.15
+WEIGHT_FLOW           = 0.10
 WEIGHT_RISK           = 0.15
 WEIGHT_CROWDING       = 0.10
 
@@ -91,10 +91,10 @@ SLIPPAGE_BPS         = 5.0   # additional entry slippage
 # RISK RULES
 # ---------------------------------------------------------------------------
 
-TRAILING_STOP_PCT               = 3.0   # -3% from high-water mark → EXIT
-TAKE_PROFIT_PCT                 = 8.0   # +8% from entry → sell half
-MOMENTUM_REVERSAL_THRESHOLD_PCT = -5.0  # 4-week return below this
-MOMENTUM_REVERSAL_MIN_PNL_PCT   = 2.0   # only exit if P&L also < +2%
+TRAILING_STOP_PCT               = 2.5   # -2.5% from high-water mark → EXIT
+TAKE_PROFIT_PCT                 = 11.0  # +11% from entry → sell half
+MOMENTUM_REVERSAL_THRESHOLD_PCT = -4.0  # 4-week return below this
+MOMENTUM_REVERSAL_MIN_PNL_PCT   = 3.0   # only exit if P&L also < +3%
 BREAKEVEN_BUFFER_PCT            = 0.5   # after partial, exit if within 0.5% of entry
 MAX_HOLD_WEEKS                  = 6     # maximum holding period
 KILL_SWITCH_DRAWDOWN_PCT        = 10.0  # portfolio DD threshold (tracked, not a hard blocker in sequential sim)
