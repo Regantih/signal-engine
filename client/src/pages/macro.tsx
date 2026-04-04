@@ -137,29 +137,33 @@ const REGIME_CONFIG = {
   },
 } as const;
 
-function formatChange(change: number): string {
-  return `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+function formatChange(change: number | undefined | null): string {
+  const c = change ?? 0;
+  return `${c >= 0 ? "+" : ""}${c.toFixed(2)}%`;
 }
 
-function formatPrice(value: number, decimals = 2): string {
-  if (value === 0) return "—";
-  if (value >= 10000) return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  return value.toFixed(decimals);
+function formatPrice(value: number | undefined | null, decimals = 2): string {
+  const v = value ?? 0;
+  if (v === 0) return "—";
+  if (v >= 10000) return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return v.toFixed(decimals);
 }
 
-function formatCryptoPrice(value: number): string {
-  if (value === 0) return "—";
-  if (value >= 1000) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  return `$${value.toFixed(2)}`;
+function formatCryptoPrice(value: number | undefined | null): string {
+  const v = value ?? 0;
+  if (v === 0) return "—";
+  if (v >= 1000) return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `$${v.toFixed(2)}`;
 }
 
-function ChangeIndicator({ change }: { change: number }) {
-  const isUp = change >= 0;
+function ChangeIndicator({ change }: { change: number | null | undefined }) {
+  const safeChange = change ?? 0;
+  const isUp = safeChange >= 0;
   const Icon = isUp ? TrendingUp : TrendingDown;
   return (
     <span className={`flex items-center gap-1 text-sm font-medium ${isUp ? "text-emerald-400" : "text-red-400"}`}>
       <Icon className="w-3.5 h-3.5" />
-      {formatChange(change)}
+      {formatChange(safeChange)}
     </span>
   );
 }
@@ -177,29 +181,30 @@ interface MarketCardProps {
 }
 
 function MarketCard({ label, field, icon: Icon, priceDecimals = 2, isVix, isFx, isYield }: MarketCardProps) {
+  const change = field?.change ?? 0;
   const changeColor =
     isVix
-      ? field.change >= 0
+      ? change >= 0
         ? "text-red-400"   // VIX up = bad
         : "text-emerald-400"
-      : field.change >= 0
+      : change >= 0
       ? "text-emerald-400"
       : "text-red-400";
 
   const ChangeIcon = isVix
-    ? field.change >= 0
+    ? change >= 0
       ? TrendingUp
       : TrendingDown
-    : field.change >= 0
+    : change >= 0
     ? TrendingUp
     : TrendingDown;
 
   const displayValue =
     isYield
-      ? `${formatPrice(field.value, 3)}%`
+      ? `${formatPrice(field?.value, 3)}%`
       : isFx
-      ? formatPrice(field.value, 4)
-      : formatPrice(field.value, priceDecimals);
+      ? formatPrice(field?.value, 4)
+      : formatPrice(field?.value, priceDecimals);
 
   return (
     <Card
@@ -214,15 +219,15 @@ function MarketCard({ label, field, icon: Icon, priceDecimals = 2, isVix, isFx, 
           <Icon className="w-4 h-4 text-muted-foreground/60" />
         </div>
         <div className="text-xl font-bold text-foreground font-mono">
-          {field.value === 0 ? "—" : displayValue}
+          {(field?.value ?? 0) === 0 ? "—" : displayValue}
         </div>
         <div className="mt-1 flex items-center gap-1">
           <ChangeIcon className={`w-3.5 h-3.5 ${changeColor}`} />
           <span className={`text-sm font-medium ${changeColor}`}>
-            {formatChange(field.change)}
+            {formatChange(change)}
           </span>
         </div>
-        {field.signal && (
+        {field?.signal && (
           <div className="mt-2">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-mono">
               {field.signal}
@@ -282,8 +287,10 @@ interface SimpleAssetCardProps {
 }
 
 function SimpleAssetCard({ label, price, change, icon: Icon, formatFn, testId }: SimpleAssetCardProps) {
-  const isUp = change >= 0;
-  const displayPrice = formatFn ? formatFn(price) : formatCryptoPrice(price);
+  const safeChange = change ?? 0;
+  const safePrice = price ?? 0;
+  const isUp = safeChange >= 0;
+  const displayPrice = formatFn ? formatFn(safePrice) : formatCryptoPrice(safePrice);
   return (
     <Card
       className="bg-card/60 border-border/50 hover:bg-card/80 transition-colors"
@@ -297,7 +304,7 @@ function SimpleAssetCard({ label, price, change, icon: Icon, formatFn, testId }:
           <Icon className="w-4 h-4 text-muted-foreground/60" />
         </div>
         <div className="text-xl font-bold text-foreground font-mono">
-          {price === 0 ? "—" : displayPrice}
+          {safePrice === 0 ? "—" : displayPrice}
         </div>
         <div className="mt-1 flex items-center gap-1">
           {isUp ? (
@@ -306,7 +313,7 @@ function SimpleAssetCard({ label, price, change, icon: Icon, formatFn, testId }:
             <TrendingDown className="w-3.5 h-3.5 text-red-400" />
           )}
           <span className={`text-sm font-medium ${isUp ? "text-emerald-400" : "text-red-400"}`}>
-            {formatChange(change)}
+            {formatChange(safeChange)}
           </span>
         </div>
       </CardContent>
@@ -314,9 +321,10 @@ function SimpleAssetCard({ label, price, change, icon: Icon, formatFn, testId }:
   );
 }
 
-function ProbabilityBar({ probability }: { probability: number }) {
+function ProbabilityBar({ probability }: { probability: number | null | undefined }) {
+  const safeProbability = probability ?? 0;
   const color =
-    probability >= 70
+    safeProbability >= 70
       ? "bg-emerald-500"
       : probability >= 40
       ? "bg-amber-500"
@@ -326,13 +334,13 @@ function ProbabilityBar({ probability }: { probability: number }) {
       <div className="flex-1 h-1.5 bg-muted/40 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full ${color} transition-all`}
-          style={{ width: `${Math.min(100, Math.max(0, probability))}%` }}
+          style={{ width: `${Math.min(100, Math.max(0, safeProbability))}%` }}
         />
       </div>
       <span className={`text-xs font-bold font-mono w-8 text-right ${
-        probability >= 70 ? "text-emerald-400" : probability >= 40 ? "text-amber-400" : "text-red-400"
+        safeProbability >= 70 ? "text-emerald-400" : safeProbability >= 40 ? "text-amber-400" : "text-red-400"
       }`}>
-        {probability}%
+        {safeProbability}%
       </span>
     </div>
   );
@@ -380,7 +388,7 @@ export default function MacroPage() {
   }
 
   const regime = snapshot?.regime ?? "NEUTRAL";
-  const cfg = REGIME_CONFIG[regime];
+  const cfg = REGIME_CONFIG[regime] ?? REGIME_CONFIG.NEUTRAL;
   const RegimeIcon = cfg.icon;
 
   const anyFetching = isFetching || intelFetching;
@@ -450,7 +458,7 @@ export default function MacroPage() {
                 Adjustment Factor
               </span>
               <span className={`text-2xl font-bold font-mono ${cfg.textColor}`}>
-                ×{snapshot.adjustmentFactor.toFixed(1)}
+                ×{(snapshot.adjustmentFactor ?? 1).toFixed(1)}
               </span>
               <span className="text-[10px] text-muted-foreground/60">
                 Applied to all allocations
@@ -541,10 +549,10 @@ export default function MacroPage() {
             </div>
           ) : snapshot ? (
             <div className="flex flex-wrap gap-3">
-              <EconIndicator label="GDP Growth" value={snapshot.macro.gdpGrowth} />
-              <EconIndicator label="Inflation" value={snapshot.macro.inflationRate} />
-              <EconIndicator label="Interest Rate" value={snapshot.macro.interestRate} />
-              <EconIndicator label="Unemployment" value={snapshot.macro.unemploymentRate} />
+              <EconIndicator label="GDP Growth" value={snapshot.macro?.gdpGrowth ?? null} />
+              <EconIndicator label="Inflation" value={snapshot.macro?.inflationRate ?? null} />
+              <EconIndicator label="Interest Rate" value={snapshot.macro?.interestRate ?? null} />
+              <EconIndicator label="Unemployment" value={snapshot.macro?.unemploymentRate ?? null} />
             </div>
           ) : null}
         </div>
@@ -607,26 +615,26 @@ export default function MacroPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {intelLoading ? (
             Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : intelData ? (
+          ) : intelData?.crypto ? (
             <>
               <SimpleAssetCard
                 label="Bitcoin"
-                price={intelData.crypto.btc.price}
-                change={intelData.crypto.btc.change}
+                price={intelData.crypto.btc?.price ?? 0}
+                change={intelData.crypto.btc?.change ?? 0}
                 icon={Bitcoin}
                 testId="card-crypto-btc"
               />
               <SimpleAssetCard
                 label="Ethereum"
-                price={intelData.crypto.eth.price}
-                change={intelData.crypto.eth.change}
+                price={intelData.crypto.eth?.price ?? 0}
+                change={intelData.crypto.eth?.change ?? 0}
                 icon={Gem}
                 testId="card-crypto-eth"
               />
               <SimpleAssetCard
                 label="Solana"
-                price={intelData.crypto.sol.price}
-                change={intelData.crypto.sol.change}
+                price={intelData.crypto.sol?.price ?? 0}
+                change={intelData.crypto.sol?.change ?? 0}
                 icon={Activity}
                 testId="card-crypto-sol"
               />
@@ -637,7 +645,7 @@ export default function MacroPage() {
             </div>
           )}
         </div>
-        {intelData && (
+        {intelData?.crypto?.sentiment && (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Crypto sentiment:</span>
             <SentimentBadge overall={intelData.crypto.sentiment} />
@@ -654,36 +662,36 @@ export default function MacroPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {intelLoading ? (
             Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : intelData ? (
+          ) : intelData?.commodities ? (
             <>
               <SimpleAssetCard
                 label="Gold"
-                price={intelData.commodities.gold.price}
-                change={intelData.commodities.gold.change}
+                price={intelData.commodities.gold?.price ?? 0}
+                change={intelData.commodities.gold?.change ?? 0}
                 icon={Gem}
                 formatFn={(v) => v === 0 ? "—" : `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
                 testId="card-commodity-gold"
               />
               <SimpleAssetCard
                 label="Crude Oil"
-                price={intelData.commodities.oil.price}
-                change={intelData.commodities.oil.change}
+                price={intelData.commodities.oil?.price ?? 0}
+                change={intelData.commodities.oil?.change ?? 0}
                 icon={Fuel}
                 formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(2)}`}
                 testId="card-commodity-oil"
               />
               <SimpleAssetCard
                 label="Silver"
-                price={intelData.commodities.silver.price}
-                change={intelData.commodities.silver.change}
+                price={intelData.commodities.silver?.price ?? 0}
+                change={intelData.commodities.silver?.change ?? 0}
                 icon={Gem}
                 formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(2)}`}
                 testId="card-commodity-silver"
               />
               <SimpleAssetCard
                 label="Natural Gas"
-                price={intelData.commodities.naturalGas.price}
-                change={intelData.commodities.naturalGas.change}
+                price={intelData.commodities.naturalGas?.price ?? 0}
+                change={intelData.commodities.naturalGas?.change ?? 0}
                 icon={Fuel}
                 formatFn={(v) => v === 0 ? "—" : `$${v.toFixed(3)}`}
                 testId="card-commodity-natgas"
@@ -711,7 +719,7 @@ export default function MacroPage() {
                   <Skeleton key={i} className="h-8 w-full rounded" />
                 ))}
               </div>
-            ) : intelData && intelData.congressionalTrades.length > 0 ? (
+            ) : intelData && intelData.congressionalTrades && intelData.congressionalTrades.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -777,7 +785,7 @@ export default function MacroPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {intelLoading ? (
             Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : intelData && intelData.polymarket.length > 0 ? (
+          ) : intelData && intelData.polymarket && intelData.polymarket.length > 0 ? (
             intelData.polymarket.slice(0, 12).map((event, idx) => (
               <a
                 key={idx}
@@ -835,7 +843,7 @@ export default function MacroPage() {
                 <Skeleton className="h-4 w-5/6" />
                 <Skeleton className="h-4 w-4/6" />
               </div>
-            ) : intelData ? (
+            ) : intelData?.sentiment ? (
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
                   {intelData.sentiment.overall === "bullish" && (

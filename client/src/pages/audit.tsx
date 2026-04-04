@@ -155,31 +155,31 @@ export default function Audit() {
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Score</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
-                      {pred.compositeScore.toFixed(3)}
+                      {(pred.compositeScore ?? 0).toFixed(3)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block">P(Win)</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
-                      {(pred.probabilityOfSuccess * 100).toFixed(1)}%
+                      {((pred.probabilityOfSuccess ?? 0) * 100).toFixed(1)}%
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Edge</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
-                      {pred.expectedEdge.toFixed(3)}
+                      {(pred.expectedEdge ?? 0).toFixed(3)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Kelly %</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
-                      {(pred.kellyFraction * 100).toFixed(2)}%
+                      {((pred.kellyFraction ?? 0) * 100).toFixed(2)}%
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Allocation</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
-                      ${pred.suggestedAllocation.toFixed(2)}
+                      ${(pred.suggestedAllocation ?? 0).toFixed(2)}
                     </span>
                   </div>
                   <div>

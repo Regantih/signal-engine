@@ -97,7 +97,7 @@ export async function fetchQuotes(symbols: string[]): Promise<QuoteData[]> {
   const allQuotes: QuoteData[] = [];
 
   for (const sym of symbols) {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`;
     const data = yahooFetch(url);
     const meta = data?.chart?.result?.[0]?.meta;
     if (!meta) continue;

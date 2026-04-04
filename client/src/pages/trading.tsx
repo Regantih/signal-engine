@@ -664,7 +664,7 @@ export default function Trading() {
             <div className="bg-card border border-border rounded-lg p-3">
               <p className="text-xs text-muted-foreground">Unrealized P&L</p>
               <p className={`text-base font-semibold mt-0.5 ${pnlColor(capitalData.unrealizedPnl)}`}>
-                {capitalData.unrealizedPnl >= 0 ? "+" : ""}{fmt(capitalData.unrealizedPnl)}
+                {(capitalData.unrealizedPnl ?? 0) >= 0 ? "+" : ""}{fmt(capitalData.unrealizedPnl)}
               </p>
             </div>
             <div className="bg-card border border-border rounded-lg p-3">
@@ -761,7 +761,7 @@ export default function Trading() {
               </thead>
               <tbody>
                 {positions.map((pos) => {
-                  const plPct = parseFloat(pos.unrealized_plpc) * 100;
+                  const plPct = (parseFloat(pos.unrealized_plpc) || 0) * 100;
                   // Find matching opportunity for sell action
                   const matchingOpp = opps?.find(
                     (o) => o.ticker?.toUpperCase() === pos.symbol.toUpperCase()
@@ -1086,22 +1086,22 @@ export default function Trading() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-card border border-border rounded-lg p-3">
               <p className="text-xs text-muted-foreground">API Calls</p>
-              <p className="text-base font-semibold mt-0.5">{costData.apiCalls.toLocaleString()}</p>
+              <p className="text-base font-semibold mt-0.5">{(costData.apiCalls ?? 0).toLocaleString()}</p>
             </div>
             <div className="bg-card border border-border rounded-lg p-3">
               <p className="text-xs text-muted-foreground">Uptime</p>
               <p className="text-base font-semibold mt-0.5 flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                {costData.uptimeMinutes}m
+                {costData.uptimeMinutes ?? 0}m
               </p>
             </div>
             <div className="bg-card border border-border rounded-lg p-3">
               <p className="text-xs text-muted-foreground">Est. Cost</p>
-              <p className="text-base font-semibold mt-0.5">${costData.estimatedCostUsd.toFixed(3)}</p>
+              <p className="text-base font-semibold mt-0.5">${(costData.estimatedCostUsd ?? 0).toFixed(3)}</p>
             </div>
             <div className="bg-card border border-border rounded-lg p-3">
               <p className="text-xs text-muted-foreground">Calls / Hour</p>
-              <p className="text-base font-semibold mt-0.5">{costData.callsPerHour.toLocaleString()}</p>
+              <p className="text-base font-semibold mt-0.5">{(costData.callsPerHour ?? 0).toLocaleString()}</p>
             </div>
           </div>
         </section>
@@ -1167,9 +1167,9 @@ export default function Trading() {
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-muted-foreground">Hit Rate</span>
-                    <span className="font-semibold">{summary.hitRate.toFixed(1)}%</span>
+                    <span className="font-semibold">{(summary.hitRate ?? 0).toFixed(1)}%</span>
                   </div>
-                  <Progress value={summary.hitRate} className="h-2" />
+                  <Progress value={summary.hitRate ?? 0} className="h-2" />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Based on {summary.totalWins + summary.totalLosses} closed predictions of{" "}
@@ -1197,7 +1197,7 @@ export default function Trading() {
                         {SIGNAL_LABELS[sig] ?? sig}
                       </span>
                       <span className="font-medium">
-                        {stats.hitRate.toFixed(0)}%
+                        {(stats.hitRate ?? 0).toFixed(0)}%
                         {stats.count > 0 && (
                           <span className="text-muted-foreground ml-1">
                             ({stats.count} obs)

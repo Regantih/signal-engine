@@ -300,7 +300,7 @@ export default function Scanner() {
                           {result.ticker}
                         </span>
                         <span className="text-sm font-medium truncate">{result.name}</span>
-                        {result.screeners[0]?.price > 0 && (
+                        {result.screeners.length > 0 && result.screeners[0]?.price != null && result.screeners[0].price > 0 && (
                           <span className="text-sm tabular-nums text-muted-foreground">
                             ${result.screeners[0].price.toFixed(2)}
                           </span>

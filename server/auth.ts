@@ -32,6 +32,9 @@ export function isPasswordSet(): boolean {
 
 // Middleware: check Authorization header for Bearer token
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // If no password is configured, skip all auth (local-only mode)
+  if (!APP_PASSWORD_HASH) { next(); return; }
+
   // Allow webhook endpoint without auth (TradingView needs it open, but add HMAC later)
   if (req.path === "/api/webhooks/tradingview") { next(); return; }
   

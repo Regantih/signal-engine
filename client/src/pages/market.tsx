@@ -236,7 +236,7 @@ function MarketCard({ opp }: { opp: Opportunity }) {
         <div className="border-t border-border/50 pt-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Signals</span>
-            {opp.compositeScore !== null && (
+            {opp.compositeScore != null && (
               <span className="text-xs font-mono tabular-nums text-muted-foreground">
                 Score: <span className="text-foreground">{opp.compositeScore.toFixed(3)}</span>
               </span>
@@ -446,11 +446,11 @@ export default function Market() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
                   <span>{opp.domain.replace(/_/g, " ")}</span>
-                  {opp.compositeScore !== null && (
+                  {opp.compositeScore != null && (
                     <span className="font-mono">Score: {opp.compositeScore.toFixed(3)}</span>
                   )}
                 </div>
-                {opp.suggestedAllocation !== null && (
+                {opp.suggestedAllocation != null && (
                   <div className="mt-2 text-xs text-muted-foreground">
                     Allocation: <span className="font-mono text-foreground">${opp.suggestedAllocation.toFixed(2)}</span>
                   </div>

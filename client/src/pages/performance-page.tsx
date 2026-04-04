@@ -174,7 +174,7 @@ export default function PerformancePage() {
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <span className="text-xs text-muted-foreground block">Total Allocated</span>
-                <span className="text-sm font-mono tabular-nums">${livePnl.totals.totalAllocated.toFixed(2)}</span>
+                <span className="text-sm font-mono tabular-nums">${(livePnl.totals.totalAllocated ?? 0).toFixed(2)}</span>
               </div>
               <div className="text-right">
                 <span className="text-xs text-muted-foreground block">Live P&L</span>
@@ -216,25 +216,25 @@ export default function PerformancePage() {
                     <td className="py-2 px-3 text-xs font-medium">{pos.name}</td>
                     <td className="py-2 px-3 text-xs font-mono text-primary">{pos.ticker}</td>
                     <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                      ${pos.entryPrice.toFixed(2)}
+                      ${(pos.entryPrice ?? 0).toFixed(2)}
                     </td>
                     <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                      ${pos.currentPrice.toFixed(2)}
+                      ${(pos.currentPrice ?? 0).toFixed(2)}
                     </td>
                     <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                      ${pos.allocation.toFixed(2)}
+                      ${(pos.allocation ?? 0).toFixed(2)}
                     </td>
-                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${pos.pnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                      {pos.pnl >= 0 ? "+" : ""}${pos.pnl.toFixed(2)}
+                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${(pos.pnl ?? 0) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {(pos.pnl ?? 0) >= 0 ? "+" : ""}${(pos.pnl ?? 0).toFixed(2)}
                     </td>
-                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${pos.pnlPercent >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                    <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono font-medium ${(pos.pnlPercent ?? 0) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       <span className="flex items-center justify-end gap-0.5">
-                        {pos.pnlPercent >= 0 ? (
+                        {(pos.pnlPercent ?? 0) >= 0 ? (
                           <TrendingUp className="w-3 h-3" />
                         ) : (
                           <TrendingDown className="w-3 h-3" />
                         )}
-                        {pos.pnlPercent >= 0 ? "+" : ""}{pos.pnlPercent.toFixed(2)}%
+                        {(pos.pnlPercent ?? 0) >= 0 ? "+" : ""}{(pos.pnlPercent ?? 0).toFixed(2)}%
                       </span>
                     </td>
                     <td className="py-2 px-3 text-center">
@@ -327,18 +327,18 @@ export default function PerformancePage() {
                         <ActionBadge action={pred.action} />
                       </td>
                       <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                        {pred.compositeScore.toFixed(3)}
+                        {(pred.compositeScore ?? 0).toFixed(3)}
                       </td>
                       <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                        {(pred.probabilityOfSuccess * 100).toFixed(1)}%
+                        {((pred.probabilityOfSuccess ?? 0) * 100).toFixed(1)}%
                       </td>
                       <td className={`py-2 px-3 text-right text-xs tabular-nums font-mono ${
-                        pred.expectedEdge > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"
+                        (pred.expectedEdge ?? 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"
                       }`}>
-                        {pred.expectedEdge > 0 ? "+" : ""}{pred.expectedEdge.toFixed(3)}
+                        {(pred.expectedEdge ?? 0) > 0 ? "+" : ""}{(pred.expectedEdge ?? 0).toFixed(3)}
                       </td>
                       <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
-                        ${pred.suggestedAllocation.toFixed(2)}
+                        ${(pred.suggestedAllocation ?? 0).toFixed(2)}
                       </td>
                       <td className="py-2 px-3 text-right text-xs tabular-nums font-mono">
                         {pred.entryPrice ? `$${pred.entryPrice.toFixed(2)}` : "—"}

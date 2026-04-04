@@ -153,19 +153,19 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">Equity</p>
-                <p className="font-semibold">${parseFloat(alpacaStatus.account.equity).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="font-semibold">${(parseFloat(alpacaStatus.account.equity || "0") || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Cash</p>
-                <p className="font-semibold">${parseFloat(alpacaStatus.account.cash).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="font-semibold">${(parseFloat(alpacaStatus.account.cash || "0") || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Buying Power</p>
-                <p className="font-semibold">${parseFloat(alpacaStatus.account.buyingPower).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="font-semibold">${(parseFloat(alpacaStatus.account.buyingPower || "0") || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Portfolio</p>
-                <p className="font-semibold">${parseFloat(alpacaStatus.account.portfolioValue).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="font-semibold">${(parseFloat(alpacaStatus.account.portfolioValue || "0") || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
           </div>
