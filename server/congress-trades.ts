@@ -76,14 +76,43 @@ function parseCapitolTradesHtml(html: string): CongressionalTrade[] {
   return trades;
 }
 
+const S3_HOUSE_URL = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json";
+
+interface HouseS3Transaction {
+  representative?: string;
+  ticker?: string;
+  transaction_date?: string;
+  disclosure_date?: string;
+  type?: string;
+  amount?: string;
+  party?: string;
+  district?: string;
+}
+
+function parseS3Trades(data: HouseS3Transaction[]): CongressionalTrade[] {
+  return data
+    .filter(t => t.ticker && t.ticker !== "--" && t.representative)
+    .map(t => ({
+      politician: t.representative || "Unknown",
+      ticker: t.ticker!.replace(/\s+/g, ""),
+      type: (t.type || "").toLowerCase().includes("sale") ? "Sale" : "Purchase",
+      amount: t.amount || "Unknown",
+      date: t.transaction_date || t.disclosure_date || "",
+      party: t.party || "Unknown",
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export async function fetchCongressionalTrades(limit = 50): Promise<CongressionalTrade[]> {
   // Return cached if fresh
   if (cachedTrades.length > 0 && Date.now() < cacheExpiry) {
     return cachedTrades.slice(0, limit);
   }
 
-  console.log("[congress] Fetching congressional trades from Capitol Trades...");
+  console.log("[congress] Fetching congressional trades...");
 
+  // Try Capitol Trades first
+  let trades: CongressionalTrade[] = [];
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
@@ -97,24 +126,49 @@ export async function fetchCongressionalTrades(limit = 50): Promise<Congressiona
     });
     clearTimeout(timeout);
 
-    if (!resp.ok) {
-      console.error(`[congress] Capitol Trades returned ${resp.status}`);
-      return cachedTrades.slice(0, limit);
+    if (resp.ok) {
+      const html = await resp.text();
+      trades = parseCapitolTradesHtml(html);
+    } else {
+      console.warn(`[congress] Capitol Trades returned ${resp.status}, trying S3 fallback...`);
     }
+  } catch (e: any) {
+    console.warn("[congress] Capitol Trades failed, trying S3 fallback:", e.message);
+  }
 
-    const html = await resp.text();
-    const trades = parseCapitolTradesHtml(html);
+  // Fallback: S3 House stock watcher data
+  if (trades.length === 0) {
+    try {
+      console.log("[congress] Fetching from S3 House stock watcher...");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
-    // Sort by date descending
-    trades.sort((a, b) => b.date.localeCompare(a.date));
+      const resp = await fetch(S3_HOUSE_URL, {
+        signal: controller.signal,
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SignalEngine/1.0)" },
+      });
+      clearTimeout(timeout);
 
+      if (resp.ok) {
+        const data: HouseS3Transaction[] = await resp.json();
+        trades = parseS3Trades(data);
+        console.log(`[congress] S3 fallback loaded ${trades.length} trades`);
+      } else {
+        console.error(`[congress] S3 fallback returned ${resp.status}`);
+      }
+    } catch (e: any) {
+      console.error("[congress] S3 fallback error:", e.message);
+    }
+  }
+
+  // Sort by date descending
+  trades.sort((a, b) => b.date.localeCompare(a.date));
+
+  if (trades.length > 0) {
     cachedTrades = trades;
     cacheExpiry = Date.now() + CACHE_TTL;
-
     console.log(`[congress] Loaded ${trades.length} congressional trades`);
-    return trades.slice(0, limit);
-  } catch (e: any) {
-    console.error("[congress] Error fetching trades:", e.message);
-    return cachedTrades.slice(0, limit);
   }
+
+  return (trades.length > 0 ? trades : cachedTrades).slice(0, limit);
 }

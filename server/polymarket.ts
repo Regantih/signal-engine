@@ -82,8 +82,8 @@ export async function fetchPolymarketEvents(limit = 20): Promise<PolymarketEvent
           }
         } catch {}
 
-        // Clamp probability to [0, 1]
-        probability = Math.max(0, Math.min(1, probability));
+        // Convert to percentage (0-100) and clamp
+        probability = Math.round(Math.max(0, Math.min(1, probability)) * 100);
 
         const volume = m.volume24hr || 0;
         const slug = m.slug || m.id || "";
