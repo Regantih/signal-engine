@@ -1,12 +1,11 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { TVChart } from "@/components/tv-chart";
+import { TradingViewChart } from "@/components/tradingview-chart";
 import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
-import { SignalBar } from "@/components/signal-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, LineChart, TrendingUp, TrendingDown, Database, Zap } from "lucide-react";
+import { LineChart, TrendingUp, TrendingDown, Zap } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -30,23 +29,6 @@ interface Opportunity {
   crowding: number;
 }
 
-interface MarketDataResponse {
-  ticker: string;
-  data: Array<{
-    id: number;
-    ticker: string;
-    date: string;
-    open: number | null;
-    high: number | null;
-    low: number | null;
-    close: number;
-    volume: number | null;
-    fetchedAt: string;
-  }>;
-  isFresh: boolean;
-  count: number;
-}
-
 interface QuoteResponse {
   ticker: string;
   price: number | null;
@@ -55,87 +37,13 @@ interface QuoteResponse {
   date: string | null;
 }
 
-// Generate realistic demo OHLCV data
-function generateDemoOHLCV(ticker: string, basePrice: number, days = 90) {
-  const data = [];
-  let price = basePrice * 0.85; // start 15% below current
-  for (let i = days; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split("T")[0];
-    const change = (Math.random() - 0.48) * price * 0.03;
-    const open = price;
-    price = Math.max(price + change, price * 0.95);
-    const high = Math.max(open, price) * (1 + Math.random() * 0.015);
-    const low = Math.min(open, price) * (1 - Math.random() * 0.015);
-    data.push({
-      date: dateStr,
-      open: +open.toFixed(2),
-      high: +high.toFixed(2),
-      low: +low.toFixed(2),
-      close: +price.toFixed(2),
-      volume: Math.floor(Math.random() * 50000000) + 10000000,
-    });
-  }
-  return data;
-}
-
-const DEMO_BASES: Record<string, number> = {
-  NVDA: 875,
-  PLTR: 22,
-  AAPL: 185,
-  MSFT: 415,
-  TSLA: 175,
-  AMZN: 190,
-  GOOGL: 165,
-  META: 500,
-};
-
 function MarketCard({ opp }: { opp: Opportunity }) {
-  const { toast } = useToast();
-
-  const { data: marketDataResp } = useQuery<MarketDataResponse>({
-    queryKey: ["/api/market-data", opp.ticker],
-    queryFn: async () => { const res = await apiRequest("GET", `/api/market-data/${opp.ticker}`); return res.json(); },
-    enabled: !!opp.ticker,
-    refetchInterval: 30000,
-  });
-
   const { data: quote } = useQuery<QuoteResponse>({
     queryKey: ["/api/market-data", opp.ticker, "quote"],
     queryFn: async () => { const res = await apiRequest("GET", `/api/market-data/${opp.ticker}/quote`); return res.json(); },
     enabled: !!opp.ticker,
     refetchInterval: 30000,
   });
-
-  const seedMutation = useMutation({
-    mutationFn: async () => {
-      if (!opp.ticker) throw new Error("No ticker");
-      const basePrice = DEMO_BASES[opp.ticker.toUpperCase()] || opp.entryPrice || 100;
-      const demoData = generateDemoOHLCV(opp.ticker, basePrice);
-      return apiRequest("POST", "/api/market-data/seed", {
-        ticker: opp.ticker,
-        data: demoData,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/market-data", opp.ticker] });
-      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
-      toast({ title: `Demo data seeded for ${opp.ticker}` });
-    },
-    onError: (e: any) => {
-      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
-    },
-  });
-
-  const chartData = (marketDataResp?.data || []).map((d) => ({
-    time: d.date,
-    open: d.open ?? undefined,
-    high: d.high ?? undefined,
-    low: d.low ?? undefined,
-    close: d.close,
-    volume: d.volume ?? undefined,
-  }));
 
   const currentPrice = quote?.price ?? opp.entryPrice;
   const changePercent = quote?.changePercent;
@@ -201,33 +109,13 @@ function MarketCard({ opp }: { opp: Opportunity }) {
 
       {/* Chart */}
       <div className="px-2 pb-2">
-        {chartData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground text-xs gap-2 border border-dashed border-border rounded-md">
-            <LineChart className="w-6 h-6 opacity-40" />
-            <span>No price data</span>
-            {opp.ticker && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs h-7"
-                onClick={() => seedMutation.mutate()}
-                disabled={seedMutation.isPending}
-                data-testid={`button-seed-${opp.ticker}`}
-              >
-                {seedMutation.isPending ? "Seeding..." : "Seed Demo Data"}
-              </Button>
-            )}
-          </div>
+        {opp.ticker ? (
+          <TradingViewChart symbol={opp.ticker} height={220} />
         ) : (
-          <TVChart
-            data={chartData}
-            entryPrice={opp.entryPrice}
-            targetPrice={opp.targetPrice}
-            stopLoss={opp.stopLoss}
-            currentPrice={currentPrice}
-            height={200}
-            chartType="candlestick"
-          />
+          <div className="flex flex-col items-center justify-center h-[220px] text-muted-foreground text-xs gap-2 border border-dashed border-border rounded-md">
+            <LineChart className="w-6 h-6 opacity-40" />
+            <span>No ticker symbol</span>
+          </div>
         )}
       </div>
 
@@ -280,48 +168,6 @@ export default function Market() {
     queryKey: ["/api/opportunities"],
   });
 
-  const { data: livePnl } = useQuery({
-    queryKey: ["/api/live-pnl"],
-    refetchInterval: 30000,
-  });
-
-  const refreshMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/refresh-prices", {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/market-data"] });
-      toast({ title: "Prices refreshed from cache" });
-    },
-    onError: (e: any) => {
-      toast({ title: "Refresh failed", description: e.message, variant: "destructive" });
-    },
-  });
-
-  const seedAllMutation = useMutation({
-    mutationFn: async () => {
-      if (!opportunities) return;
-      const marketOpps = opportunities.filter(
-        (o) => o.domain === "public_markets" && o.ticker
-      );
-      for (const opp of marketOpps) {
-        const basePrice = DEMO_BASES[opp.ticker!.toUpperCase()] || opp.entryPrice || 100;
-        const demoData = generateDemoOHLCV(opp.ticker!, basePrice);
-        await apiRequest("POST", "/api/market-data/seed", {
-          ticker: opp.ticker,
-          data: demoData,
-        });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/market-data"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/live-pnl"] });
-      toast({ title: "Demo data seeded for all tickers" });
-    },
-    onError: (e: any) => {
-      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
-    },
-  });
-
   const autoScoreAllMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/auto-score-all");
@@ -367,7 +213,7 @@ export default function Market() {
         <div>
           <h2 className="text-xl font-semibold">Live Market</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            TradingView-style charts for all tracked instruments
+            Real-time TradingView charts for all tracked instruments
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -380,26 +226,6 @@ export default function Market() {
           >
             <Zap className={`w-3.5 h-3.5 mr-1.5 ${autoScoreAllMutation.isPending ? "animate-pulse" : ""}`} />
             {autoScoreAllMutation.isPending ? "Auto-Scoring..." : "Auto-Score All"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => seedAllMutation.mutate()}
-            disabled={seedAllMutation.isPending}
-            data-testid="button-seed-all"
-          >
-            <Database className="w-3.5 h-3.5 mr-1.5" />
-            {seedAllMutation.isPending ? "Seeding..." : "Seed Demo Data"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending}
-            data-testid="button-refresh-prices"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
-            Fetch Latest Prices
           </Button>
         </div>
       </div>
