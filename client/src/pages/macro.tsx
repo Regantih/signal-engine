@@ -711,7 +711,8 @@ export default function MacroPage() {
         </div>
       </div>
 
-      {/* Congressional Trades Section */}
+      {/* Congressional Trades Section — hidden when empty */}
+      {intelData?.congressionalTrades && intelData.congressionalTrades.length > 0 && (
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <Landmark className="w-4 h-4" />
@@ -719,13 +720,6 @@ export default function MacroPage() {
         </h2>
         <Card className="bg-card/60 border-border/50" data-testid="card-congressional-trades">
           <CardContent className="p-0">
-            {intelLoading ? (
-              <div className="p-4 space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full rounded" />
-                ))}
-              </div>
-            ) : intelData?.congressionalTrades && intelData.congressionalTrades.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -773,26 +767,20 @@ export default function MacroPage() {
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <div className="p-6 text-sm text-muted-foreground text-center">
-                Congressional trade data unavailable
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
+      )}
 
-      {/* Polymarket Predictions Section */}
+      {/* Polymarket Predictions Section — hidden when empty */}
+      {intelData?.polymarket && intelData.polymarket.length > 0 && (
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <Brain className="w-4 h-4" />
           Prediction Markets — What the crowd expects
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {intelLoading ? (
-            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : intelData?.polymarket && intelData.polymarket.length > 0 ? (
-            intelData.polymarket.slice(0, 12).map((event, idx) => (
+            {intelData.polymarket.slice(0, 12).map((event, idx) => (
               <a
                 key={idx}
                 href={event.url}
@@ -825,14 +813,10 @@ export default function MacroPage() {
                   </CardContent>
                 </Card>
               </a>
-            ))
-          ) : (
-            <div className="col-span-3 text-sm text-muted-foreground py-4 text-center">
-              Prediction market data unavailable
-            </div>
-          )}
+            ))}
         </div>
       </div>
+      )}
 
       {/* Detailed Market Sentiment Section */}
       <div>

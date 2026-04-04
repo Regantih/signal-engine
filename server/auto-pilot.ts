@@ -3,6 +3,8 @@ import { computeAutoSignals } from "./auto-signals";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { storage } from "./storage";
 import { DEFAULT_WEIGHTS } from "@shared/schema";
+import { fetchOHLCV } from "./market-data-provider";
+import { fetchBenzingaNews } from "./benzinga-service";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -105,6 +107,45 @@ async function autoScoreTicker(ticker: string): Promise<boolean> {
   }
 }
 
+async function autoSeedPriceHistory(tickers: string[]): Promise<void> {
+  const now = new Date().toISOString();
+  let seeded = 0;
+  for (const ticker of tickers.slice(0, 20)) {
+    try {
+      const bars = await fetchOHLCV(ticker, "1mo", "1d");
+      if (bars.length === 0) continue;
+
+      const rows = bars.map(b => ({
+        ticker: ticker.toUpperCase(),
+        date: b.date,
+        open: b.open ?? null,
+        high: b.high ?? null,
+        low: b.low ?? null,
+        close: b.close,
+        volume: b.volume ?? null,
+        fetchedAt: now,
+      }));
+
+      await storage.seedMarketData(ticker.toUpperCase(), rows);
+      seeded++;
+    } catch (e: any) {
+      console.error(`[autopilot] Error seeding price data for ${ticker}: ${e.message}`);
+    }
+  }
+  console.log(`[autopilot] Seeded price history for ${seeded}/${Math.min(tickers.length, 20)} tickers`);
+}
+
+async function autoFetchNews(tickers: string[]): Promise<void> {
+  try {
+    const top = tickers.slice(0, 10);
+    if (top.length === 0) return;
+    const articles = await fetchBenzingaNews(top);
+    console.log(`[autopilot] Fetched ${articles.length} news articles for ${top.length} tickers`);
+  } catch (e: any) {
+    console.error(`[autopilot] Error fetching news: ${e.message}`);
+  }
+}
+
 async function runAutopilot(): Promise<void> {
   try {
     console.log("[autopilot] Scanning universe...");
@@ -139,6 +180,15 @@ async function runAutopilot(): Promise<void> {
     }
 
     console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
+
+    // Auto-seed price history for all tracked tickers
+    const trackedTickers = Array.from(new Set(marketOpps.map(o => o.ticker!.toUpperCase())));
+    console.log(`[autopilot] Seeding price history for ${trackedTickers.length} tickers...`);
+    await autoSeedPriceHistory(trackedTickers);
+
+    // Auto-fetch news for top tracked tickers
+    console.log(`[autopilot] Fetching news...`);
+    await autoFetchNews(trackedTickers);
   } catch (e: any) {
     console.error(`[autopilot] Error in autopilot cycle: ${e.message}`);
   }

@@ -81,38 +81,81 @@ function parseArticlesFromHtml(html: string, sourceTicker: string): Array<{
   return articles;
 }
 
+// Yahoo Finance RSS fallback — free, no API key required
+async function fetchYahooRssNews(ticker: string): Promise<Array<{ title: string; url: string; benzingaId: string; author: string | null }>> {
+  try {
+    const rssUrl = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(ticker)}&region=US&lang=en-US`;
+    const resp = await fetch(rssUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+    });
+    if (!resp.ok) return [];
+
+    const xml = await resp.text();
+    const items: Array<{ title: string; url: string; benzingaId: string; author: string | null }> = [];
+
+    // Simple XML parsing for RSS items
+    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+    let match;
+    while ((match = itemRegex.exec(xml)) !== null) {
+      const block = match[1];
+      const titleMatch = block.match(/<title>([^<]+)<\/title>/);
+      const linkMatch = block.match(/<link>([^<]+)<\/link>/);
+      const guidMatch = block.match(/<guid[^>]*>([^<]+)<\/guid>/);
+      if (titleMatch && linkMatch) {
+        items.push({
+          title: titleMatch[1].replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+          url: linkMatch[1],
+          benzingaId: guidMatch ? guidMatch[1] : linkMatch[1].replace(/[^a-z0-9]/gi, "").slice(-16),
+          author: null,
+        });
+      }
+    }
+    return items;
+  } catch (e: any) {
+    console.error(`Yahoo RSS fetch error for ${ticker}:`, e.message);
+    return [];
+  }
+}
+
 export async function fetchBenzingaNews(
   tickers?: string[],
   _pageSize: number = 30
 ): Promise<any[]> {
   const tickerList = tickers && tickers.length > 0 ? tickers : [];
   if (tickerList.length === 0) return [];
-  
+
   const allArticles: any[] = [];
   const now = new Date().toISOString();
-  
+
   for (const ticker of tickerList.slice(0, 5)) { // Limit to 5 tickers per refresh
     try {
-      const url = `${BENZINGA_BASE}/quote/${ticker.toUpperCase()}/news`;
-      const resp = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml",
-        },
-      });
-      
-      if (!resp.ok) {
-        console.error(`Benzinga page fetch error for ${ticker}: ${resp.status}`);
-        continue;
+      // Try Benzinga first
+      let parsed: Array<{ title: string; url: string; benzingaId: string; author: string | null }> = [];
+      try {
+        const url = `${BENZINGA_BASE}/quote/${ticker.toUpperCase()}/news`;
+        const resp = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+          },
+        });
+        if (resp.ok) {
+          const html = await resp.text();
+          parsed = parseArticlesFromHtml(html, ticker);
+        }
+      } catch {}
+
+      // Fallback to Yahoo Finance RSS if Benzinga yields nothing
+      if (parsed.length === 0) {
+        parsed = await fetchYahooRssNews(ticker);
       }
-      
-      const html = await resp.text();
-      const parsed = parseArticlesFromHtml(html, ticker);
-      
+
+      const source = parsed.length > 0 && parsed[0].url.includes("yahoo") ? "yahoo" : "benzinga";
+
       for (const article of parsed.slice(0, _pageSize)) {
         const sentiment = computeSentiment(article.title);
         const isWiim = isWiimArticle(article.title) ? 1 : 0;
-        
+
         try {
           await storage.saveBenzingaNews({
             benzingaId: article.benzingaId,
@@ -121,7 +164,7 @@ export async function fetchBenzingaNews(
             body: null,
             url: article.url,
             author: article.author,
-            source: "benzinga",
+            source,
             channels: isWiim ? JSON.stringify(["WIIM"]) : null,
             tags: null,
             sentiment,
@@ -132,7 +175,7 @@ export async function fetchBenzingaNews(
         } catch (e) {
           // Skip duplicate
         }
-        
+
         allArticles.push({
           id: article.benzingaId,
           title: article.title,
@@ -144,10 +187,10 @@ export async function fetchBenzingaNews(
         });
       }
     } catch (e: any) {
-      console.error(`Benzinga fetch error for ${ticker}:`, e.message);
+      console.error(`News fetch error for ${ticker}:`, e.message);
     }
   }
-  
+
   return allArticles;
 }
 
