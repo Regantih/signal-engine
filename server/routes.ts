@@ -7,6 +7,7 @@ import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 import { computeAutoSignals } from "./auto-signals";
 import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
 import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
+import { executePaperTrade, getPaperPositions, getPaperOrders, closePaperPosition, closeAllPaperPositions, getPaperAccountSummary } from "./paper-trading";
 import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position, type PortfolioRisk } from "./risk-manager";
 import { fetchMacroSnapshot, type MacroSnapshot } from "./macro-monitor";
@@ -1327,6 +1328,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         const account = await getAccount();
         res.json({
           connected: true,
+          mode: "alpaca",
           account: {
             equity: account.equity,
             buyingPower: account.buying_power,
@@ -1335,29 +1337,114 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           },
         });
       } else {
-        res.json({ connected: false });
+        // Fall back to paper trading engine
+        const account = await getPaperAccountSummary();
+        res.json({
+          connected: true,
+          mode: "paper-local",
+          account,
+        });
       }
     } catch (e: any) {
-      res.json({ connected: false, error: e.message });
+      // Even on error, paper trading is always available
+      try {
+        const account = await getPaperAccountSummary();
+        res.json({ connected: true, mode: "paper-local", account });
+      } catch {
+        res.json({ connected: false, error: e.message });
+      }
     }
   });
 
   app.get("/api/alpaca/positions", async (_req, res) => {
     try {
-      const positions = await getPositions();
-      res.json({ positions });
+      const alpacaConnected = await isAlpacaConnected();
+      if (alpacaConnected) {
+        const positions = await getPositions();
+        res.json({ positions });
+      } else {
+        // Return paper positions in Alpaca-compatible format
+        const paperPos = await getPaperPositions();
+        const positions = paperPos.map(p => ({
+          symbol: p.ticker,
+          qty: String(p.shares),
+          avg_entry_price: String(p.avgEntryPrice),
+          current_price: String(p.currentPrice || p.avgEntryPrice),
+          market_value: String(p.marketValue || 0),
+          unrealized_pl: String(p.unrealizedPnl || 0),
+          unrealized_plpc: String((p.unrealizedPnlPct || 0) / 100),
+          side: p.side,
+          asset_class: "us_equity",
+          _paper: true,
+        }));
+        res.json({ positions });
+      }
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      // Fallback: always return paper positions
+      try {
+        const paperPos = await getPaperPositions();
+        const positions = paperPos.map(p => ({
+          symbol: p.ticker,
+          qty: String(p.shares),
+          avg_entry_price: String(p.avgEntryPrice),
+          current_price: String(p.currentPrice || p.avgEntryPrice),
+          market_value: String(p.marketValue || 0),
+          unrealized_pl: String(p.unrealizedPnl || 0),
+          unrealized_plpc: String((p.unrealizedPnlPct || 0) / 100),
+          side: p.side,
+          asset_class: "us_equity",
+          _paper: true,
+        }));
+        res.json({ positions });
+      } catch {
+        res.status(400).json({ error: e.message });
+      }
     }
   });
 
   app.get("/api/alpaca/orders", async (req, res) => {
     try {
-      const status = (req.query.status as string) || "all";
-      const orders = await getOrders(status);
-      res.json({ orders });
+      const alpacaConnected = await isAlpacaConnected();
+      if (alpacaConnected) {
+        const status = (req.query.status as string) || "all";
+        const orders = await getOrders(status);
+        res.json({ orders });
+      } else {
+        // Return paper orders in Alpaca-compatible format
+        const paperOrd = await getPaperOrders();
+        const orders = paperOrd.map(o => ({
+          id: String(o.id),
+          symbol: o.ticker,
+          qty: String(o.shares),
+          notional: String(o.shares * o.price),
+          side: o.action.toLowerCase(),
+          type: "market",
+          status: o.status,
+          created_at: o.createdAt,
+          filled_avg_price: String(o.price),
+          _paper: true,
+        }));
+        res.json({ orders });
+      }
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      try {
+        const paperOrd = await getPaperOrders();
+        const orders = paperOrd.map(o => ({
+          id: String(o.id),
+          symbol: o.ticker,
+          qty: String(o.shares),
+          notional: String(o.shares * o.price),
+          side: o.action.toLowerCase(),
+          type: "market",
+          status: o.status,
+          created_at: o.createdAt,
+          filled_avg_price: String(o.price),
+          _paper: true,
+        }));
+        res.json({ orders });
+      } catch {
+        res.status(400).json({ error: e.message });
+      }
     }
   });
 
@@ -1446,34 +1533,59 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       const targetPrice = opp.targetPrice || currentPrice * 1.1;
       const stopLoss = opp.stopLoss || currentPrice * 0.95;
 
-      const order = await placeBracketOrder(
-        opp.ticker,
-        orderNotional || (orderQty! * currentPrice), // dollar amount
-        targetPrice,
-        stopLoss
-      );
+      // Check if Alpaca is connected — if not, use paper trading
+      const alpacaConnected = await isAlpacaConnected();
 
-      // Record the trade after successful placement
-      rateLimiter.recordTrade(opp.ticker!);
+      if (alpacaConnected) {
+        const order = await placeBracketOrder(
+          opp.ticker,
+          orderNotional || (orderQty! * currentPrice),
+          targetPrice,
+          stopLoss
+        );
 
-      // Update opportunity status with LIVE entry price
-      await storage.updateOpportunity(opp.id, {
-        status: "buy",
-        entryPrice: currentPrice,
-        updatedAt: new Date().toISOString(),
-      });
+        rateLimiter.recordTrade(opp.ticker!);
 
-      res.json({
-        order,
-        message: brokerMode === "whole_shares"
-          ? `Bracket order placed: ${orderQty} share(s) of ${opp.ticker} at $${currentPrice.toFixed(2)} ($${(orderQty! * currentPrice).toFixed(2)}) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`
-          : `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} at $${currentPrice.toFixed(2)} (${(opp.suggestedAllocation / currentPrice).toFixed(4)} fractional shares) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
-        executionPrice: currentPrice,
-        brokerMode,
-        shares: brokerMode === "whole_shares" ? orderQty : Math.round((opp.suggestedAllocation / currentPrice) * 10000) / 10000,
-        wholeSharesOnly: brokerMode === "whole_shares",
-        notionalValue: brokerMode === "whole_shares" ? (orderQty! * currentPrice) : opp.suggestedAllocation,
-      });
+        await storage.updateOpportunity(opp.id, {
+          status: "buy",
+          entryPrice: currentPrice,
+          updatedAt: new Date().toISOString(),
+        });
+
+        res.json({
+          order,
+          message: brokerMode === "whole_shares"
+            ? `Bracket order placed: ${orderQty} share(s) of ${opp.ticker} at $${currentPrice.toFixed(2)} ($${(orderQty! * currentPrice).toFixed(2)}) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`
+            : `Bracket order placed: $${opp.suggestedAllocation.toFixed(2)} of ${opp.ticker} at $${currentPrice.toFixed(2)} (${(opp.suggestedAllocation / currentPrice).toFixed(4)} fractional shares) with TP=$${targetPrice.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`,
+          executionPrice: currentPrice,
+          brokerMode,
+          shares: brokerMode === "whole_shares" ? orderQty : Math.round((opp.suggestedAllocation / currentPrice) * 10000) / 10000,
+          wholeSharesOnly: brokerMode === "whole_shares",
+          notionalValue: brokerMode === "whole_shares" ? (orderQty! * currentPrice) : opp.suggestedAllocation,
+        });
+      } else {
+        // Paper trading execution
+        const shares = orderQty || (opp.suggestedAllocation / currentPrice);
+        const order = await executePaperTrade(opp.ticker, "BUY", shares, currentPrice, opp.id);
+
+        rateLimiter.recordTrade(opp.ticker!);
+
+        await storage.updateOpportunity(opp.id, {
+          status: "buy",
+          entryPrice: currentPrice,
+          updatedAt: new Date().toISOString(),
+        });
+
+        res.json({
+          order,
+          message: `[PAPER] Bought ${shares.toFixed(4)} shares of ${opp.ticker} at $${currentPrice.toFixed(2)}`,
+          executionPrice: currentPrice,
+          brokerMode: "paper-local",
+          shares,
+          notionalValue: shares * currentPrice,
+          _paper: true,
+        });
+      }
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1486,14 +1598,24 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       if (!opp) return res.status(404).json({ error: "Opportunity not found" });
       if (!opp.ticker) return res.status(400).json({ error: "No ticker symbol" });
 
-      const result = await closePosition(opp.ticker);
+      const alpacaConnected = await isAlpacaConnected();
 
-      await storage.updateOpportunity(opp.id, {
-        status: "closed",
-        updatedAt: new Date().toISOString(),
-      });
-
-      res.json({ result, message: `Position closed for ${opp.ticker}` });
+      if (alpacaConnected) {
+        const result = await closePosition(opp.ticker);
+        await storage.updateOpportunity(opp.id, {
+          status: "closed",
+          updatedAt: new Date().toISOString(),
+        });
+        res.json({ result, message: `Position closed for ${opp.ticker}` });
+      } else {
+        // Paper trading: close position
+        const order = await closePaperPosition(opp.ticker);
+        await storage.updateOpportunity(opp.id, {
+          status: "closed",
+          updatedAt: new Date().toISOString(),
+        });
+        res.json({ result: order, message: `[PAPER] Position closed for ${opp.ticker}`, _paper: true });
+      }
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1502,8 +1624,15 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   // POST /api/alpaca/close-all — Close all positions
   app.post("/api/alpaca/close-all", async (_req, res) => {
     try {
-      const result = await closeAllPositions();
-      res.json({ result, message: "All positions closed" });
+      const alpacaConnected = await isAlpacaConnected();
+
+      if (alpacaConnected) {
+        const result = await closeAllPositions();
+        res.json({ result, message: "All positions closed" });
+      } else {
+        const result = await closeAllPaperPositions();
+        res.json({ result, message: `[PAPER] Closed ${result.closed} paper positions`, _paper: true });
+      }
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

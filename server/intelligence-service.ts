@@ -1,4 +1,6 @@
 import { fetchQuotes, deriveSentiment } from "./market-data-provider";
+import { fetchCongressionalTrades as fetchCongressTrades } from "./congress-trades";
+import { fetchPolymarketEvents } from "./polymarket";
 
 // --- CRYPTO ---
 export interface CryptoSnapshot {
@@ -58,9 +60,20 @@ export interface CongressionalTrade {
   date: string;
 }
 
-export function fetchCongressionalTrades(): CongressionalTrade[] {
-  // No free API available — return empty gracefully
-  return [];
+export async function fetchCongressionalTrades(): Promise<CongressionalTrade[]> {
+  try {
+    const trades = await fetchCongressTrades(50);
+    return trades.map(t => ({
+      politician: t.politician,
+      ticker: t.ticker,
+      type: t.type.toLowerCase().includes("sale") ? "sell" : "buy",
+      amount: t.amount,
+      date: t.date,
+    }));
+  } catch (e: any) {
+    console.error("[intelligence] Congressional trades failed:", e.message);
+    return [];
+  }
 }
 
 // --- POLYMARKET PREDICTIONS ---
@@ -72,9 +85,13 @@ export interface PolymarketEvent {
   url: string;
 }
 
-export function fetchPolymarket(): PolymarketEvent[] {
-  // No free API available — return empty gracefully
-  return [];
+export async function fetchPolymarket(): Promise<PolymarketEvent[]> {
+  try {
+    return await fetchPolymarketEvents(20);
+  } catch (e: any) {
+    console.error("[intelligence] Polymarket fetch failed:", e.message);
+    return [];
+  }
 }
 
 // --- MARKET SENTIMENT (detailed) ---
@@ -122,8 +139,8 @@ export async function fetchFullIntelligence(): Promise<IntelligenceSnapshot> {
 
   try { crypto = await fetchCrypto(); } catch (e: any) { console.error("Crypto fetch failed:", e.message); }
   try { commodities = await fetchCommodities(); } catch (e: any) { console.error("Commodities fetch failed:", e.message); }
-  try { congressionalTrades = fetchCongressionalTrades(); } catch (e: any) { console.error("Congressional trades failed:", e.message); }
-  try { polymarket = fetchPolymarket(); } catch (e: any) { console.error("Polymarket fetch failed:", e.message); }
+  try { congressionalTrades = await fetchCongressionalTrades(); } catch (e: any) { console.error("Congressional trades failed:", e.message); }
+  try { polymarket = await fetchPolymarket(); } catch (e: any) { console.error("Polymarket fetch failed:", e.message); }
   try { sentiment = await fetchDetailedSentiment(); } catch (e: any) { console.error("Sentiment fetch failed:", e.message); }
 
   console.log(`[intelligence] Done: crypto=${crypto.btc.price > 0}, commodities=${commodities.gold.price > 0}, congress=${congressionalTrades.length}, polymarket=${polymarket.length}`);

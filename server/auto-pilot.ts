@@ -4,7 +4,9 @@ import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-e
 import { storage } from "./storage";
 import { DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchOHLCV } from "./market-data-provider";
-import { fetchBenzingaNews } from "./benzinga-service";
+import { fetchBenzingaNews, rescoreZeroSentimentArticles } from "./benzinga-service";
+import { executePaperTrade, getPaperPositions } from "./paper-trading";
+import { isAlpacaConnected } from "./alpaca-service";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -181,6 +183,48 @@ async function runAutopilot(): Promise<void> {
 
     console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
 
+    // Auto-execute paper trades for HIGH conviction opportunities (when Alpaca not connected)
+    try {
+      const alpacaConnected = await isAlpacaConnected();
+      if (!alpacaConnected) {
+        const freshOpps = await storage.getOpportunities();
+        const highConviction = freshOpps.filter(
+          o => o.domain === "public_markets" &&
+               o.ticker &&
+               o.convictionBand === "high" &&
+               o.status === "buy" &&
+               o.entryPrice && o.entryPrice > 0 &&
+               o.suggestedAllocation && o.suggestedAllocation > 0
+        );
+
+        // Check existing paper positions to avoid duplicates
+        const paperPositions = await getPaperPositions();
+        const positionTickers = new Set(paperPositions.map(p => p.ticker.toUpperCase()));
+
+        let paperTraded = 0;
+        for (const opp of highConviction) {
+          if (positionTickers.has(opp.ticker!.toUpperCase())) continue; // Already have position
+
+          const shares = opp.suggestedAllocation! / opp.entryPrice!;
+          if (shares <= 0) continue;
+
+          try {
+            await executePaperTrade(opp.ticker!, "BUY", shares, opp.entryPrice!, opp.id);
+            console.log(`[autopilot] Paper-traded ${opp.ticker}: BUY ${shares.toFixed(4)} shares @ $${opp.entryPrice!.toFixed(2)}`);
+            paperTraded++;
+          } catch (e: any) {
+            console.error(`[autopilot] Paper trade failed for ${opp.ticker}: ${e.message}`);
+          }
+        }
+
+        if (paperTraded > 0) {
+          console.log(`[autopilot] Auto-executed ${paperTraded} paper trades (HIGH conviction)`);
+        }
+      }
+    } catch (e: any) {
+      console.error(`[autopilot] Paper trade auto-execution error: ${e.message}`);
+    }
+
     // Auto-seed price history for all tracked tickers
     const trackedTickers = Array.from(new Set(marketOpps.map(o => o.ticker!.toUpperCase())));
     console.log(`[autopilot] Seeding price history for ${trackedTickers.length} tickers...`);
@@ -189,6 +233,13 @@ async function runAutopilot(): Promise<void> {
     // Auto-fetch news for top tracked tickers
     console.log(`[autopilot] Fetching news...`);
     await autoFetchNews(trackedTickers);
+
+    // Re-score any articles with zero sentiment
+    try {
+      await rescoreZeroSentimentArticles();
+    } catch (e: any) {
+      console.error(`[autopilot] Sentiment re-scoring error: ${e.message}`);
+    }
   } catch (e: any) {
     console.error(`[autopilot] Error in autopilot cycle: ${e.message}`);
   }

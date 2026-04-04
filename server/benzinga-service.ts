@@ -3,10 +3,10 @@ import { storage } from "./storage";
 const BENZINGA_BASE = "https://www.benzinga.com";
 
 // Simple sentiment heuristic from title text
-function computeSentiment(title: string, body?: string | null): number {
+export function computeSentiment(title: string, body?: string | null): number {
   const text = `${title} ${body || ""}`.toLowerCase();
-  const bullish = ["surge", "soar", "rally", "beat", "upgrade", "outperform", "bullish", "record", "growth", "strong", "positive", "gain", "rise", "jump", "boom", "breakout", "buy", "higher", "raises", "maintains buy", "upside", "optimistic"];
-  const bearish = ["crash", "plunge", "drop", "miss", "downgrade", "underperform", "bearish", "weak", "negative", "loss", "fall", "decline", "selloff", "sell", "warning", "risk", "fear", "lower", "cuts", "concern", "slump", "sinks"];
+  const bullish = ["surge", "soar", "rally", "beat", "upgrade", "outperform", "bullish", "record", "growth", "strong", "positive", "gain", "rise", "jump", "boom", "breakout", "buy", "higher", "raises", "maintains buy", "upside", "optimistic", "exceeds", "top pick", "momentum", "accelerate", "profit", "revenue beat", "blowout", "catalyst", "oversold bounce", "all-time high", "expansion", "dividend hike", "price target raised"];
+  const bearish = ["crash", "plunge", "drop", "miss", "downgrade", "underperform", "bearish", "weak", "negative", "loss", "fall", "decline", "selloff", "sell", "warning", "risk", "fear", "lower", "cuts", "concern", "slump", "sinks", "layoff", "bankruptcy", "investigation", "lawsuit", "recall", "fraud", "default", "guidance cut", "earnings miss", "revenue miss", "overvalued", "price target lowered", "debt"];
   
   let score = 0;
   for (const word of bullish) if (text.includes(word)) score += 0.15;
@@ -192,6 +192,31 @@ export async function fetchBenzingaNews(
   }
 
   return allArticles;
+}
+
+// Re-score articles that currently have sentiment=0
+export async function rescoreZeroSentimentArticles(): Promise<number> {
+  const allNews = await storage.getBenzingaNews(undefined, 500);
+  let rescored = 0;
+  for (const article of allNews) {
+    if (article.sentiment === 0 || article.sentiment === null) {
+      const newSentiment = computeSentiment(article.title, article.body);
+      if (newSentiment !== 0) {
+        // Update in DB via raw SQL since we don't have an update method for news
+        try {
+          const { db } = await import("./storage");
+          const { benzingaNews: newsTable } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          db.update(newsTable).set({ sentiment: newSentiment }).where(eq(newsTable.id, article.id)).run();
+          rescored++;
+        } catch {}
+      }
+    }
+  }
+  if (rescored > 0) {
+    console.log(`[benzinga] Re-scored ${rescored} articles with zero sentiment`);
+  }
+  return rescored;
 }
 
 // Compute aggregate news sentiment for a ticker

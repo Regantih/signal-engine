@@ -160,6 +160,30 @@ sqlite.exec(`
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS paper_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    shares REAL NOT NULL,
+    avg_entry_price REAL NOT NULL,
+    current_price REAL,
+    side TEXT NOT NULL DEFAULT 'long',
+    opened_at TEXT NOT NULL,
+    closed_at TEXT,
+    realized_pnl REAL,
+    status TEXT NOT NULL DEFAULT 'open'
+  );
+
+  CREATE TABLE IF NOT EXISTS paper_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL,
+    shares REAL NOT NULL,
+    price REAL NOT NULL,
+    opportunity_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'filled',
+    created_at TEXT NOT NULL
+  );
 `);
 
 // Migrate: add screener_flags column if it doesn't exist

@@ -179,6 +179,31 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
+// Paper trading tables
+export const paperPositions = sqliteTable("paper_positions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ticker: text("ticker").notNull(),
+  shares: real("shares").notNull(),
+  avgEntryPrice: real("avg_entry_price").notNull(),
+  currentPrice: real("current_price"),
+  side: text("side").notNull().default("long"),
+  openedAt: text("opened_at").notNull(),
+  closedAt: text("closed_at"),
+  realizedPnl: real("realized_pnl"),
+  status: text("status").notNull().default("open"), // open, closed
+});
+
+export const paperOrders = sqliteTable("paper_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ticker: text("ticker").notNull(),
+  action: text("action").notNull(), // BUY, SELL
+  shares: real("shares").notNull(),
+  price: real("price").notNull(),
+  opportunityId: integer("opportunity_id"),
+  status: text("status").notNull().default("filled"),
+  createdAt: text("created_at").notNull(),
+});
+
 // Insert schemas
 export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, compositeScore: true, probabilityOfSuccess: true, expectedEdge: true, kellyFraction: true, convictionBand: true, suggestedAllocation: true });
 export const insertPredictionSchema = createInsertSchema(predictions).omit({ id: true });
@@ -189,6 +214,8 @@ export const insertWebhookAlertSchema = createInsertSchema(webhookAlerts).omit({
 export const insertPublishedPredictionSchema = createInsertSchema(publishedPredictions).omit({ id: true });
 export const insertBenzingaNewsSchema = createInsertSchema(benzingaNews).omit({ id: true });
 export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true });
+export const insertPaperPositionSchema = createInsertSchema(paperPositions).omit({ id: true });
+export const insertPaperOrderSchema = createInsertSchema(paperOrders).omit({ id: true });
 
 // Types
 export type Opportunity = typeof opportunities.$inferSelect;
@@ -210,3 +237,7 @@ export type BenzingaNews = typeof benzingaNews.$inferSelect;
 export type InsertBenzingaNews = z.infer<typeof insertBenzingaNewsSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
+export type PaperPosition = typeof paperPositions.$inferSelect;
+export type InsertPaperPosition = z.infer<typeof insertPaperPositionSchema>;
+export type PaperOrder = typeof paperOrders.$inferSelect;
+export type InsertPaperOrder = z.infer<typeof insertPaperOrderSchema>;
