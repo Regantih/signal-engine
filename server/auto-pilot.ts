@@ -184,6 +184,37 @@ async function runAutopilot(): Promise<void> {
 
     console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
 
+    // Cap total allocations to budget — rank by score, allocate top-down
+    try {
+      const portfolio = await storage.getPortfolio();
+      const totalBudget = portfolio?.totalBudget || 100;
+      const freshOpps = await storage.getOpportunities();
+      const buyOpps = freshOpps
+        .filter(o => o.domain === "public_markets" && o.status === "buy" && (o.suggestedAllocation || 0) > 0)
+        .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
+
+      let remaining = totalBudget;
+      let totalAllocated = 0;
+      for (const opp of buyOpps) {
+        const allocation = Math.min(opp.suggestedAllocation || 0, remaining);
+        if (allocation !== opp.suggestedAllocation) {
+          await storage.updateOpportunity(opp.id, {
+            suggestedAllocation: allocation > 0 ? allocation : 0,
+            status: allocation > 0 ? "buy" : "watch",
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        remaining -= allocation;
+        totalAllocated += allocation;
+      }
+
+      // Update portfolio allocated amount
+      await storage.updatePortfolio({ allocatedAmount: totalAllocated });
+      console.log(`[autopilot] Budget cap: $${totalAllocated.toFixed(2)} allocated of $${totalBudget} budget`);
+    } catch (e: any) {
+      console.error(`[autopilot] Budget cap error: ${e.message}`);
+    }
+
     // Auto-execute paper trades for HIGH conviction opportunities (simulated, no real money)
     try {
       const alpacaConnected = await isAlpacaConnected();
