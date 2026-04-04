@@ -1223,6 +1223,93 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       }
 
       const opp = await addScannedOpportunity(ticker, name || ticker, screeners || []);
+
+      // Auto-score the newly added ticker immediately
+      try {
+        const signals = await computeAutoSignals(ticker.toUpperCase());
+        if (signals && opp.id) {
+          const now = new Date().toISOString();
+          await storage.updateOpportunity(opp.id, {
+            momentum: signals.momentum,
+            meanReversion: signals.meanReversion,
+            quality: signals.quality,
+            flow: signals.flow,
+            risk: signals.risk,
+            crowding: signals.crowding,
+            entryPrice: signals.metadata.price,
+            updatedAt: now,
+          });
+
+          const weights = await storage.getWeights("public_markets") || {
+            momentum: DEFAULT_WEIGHTS.momentum,
+            meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+            quality: DEFAULT_WEIGHTS.quality,
+            flow: DEFAULT_WEIGHTS.flow,
+            risk: DEFAULT_WEIGHTS.risk,
+            crowding: DEFAULT_WEIGHTS.crowding,
+          };
+          const portfolio = await storage.getPortfolio();
+          const budget = portfolio?.cashRemaining || 100;
+
+          const result = scoreOpportunity(
+            {
+              momentum: signals.momentum,
+              meanReversion: signals.meanReversion,
+              quality: signals.quality,
+              flow: signals.flow,
+              risk: signals.risk,
+              crowding: signals.crowding,
+            },
+            {
+              momentum: weights.momentum,
+              meanReversion: weights.meanReversion,
+              quality: weights.quality,
+              flow: weights.flow,
+              risk: weights.risk,
+              crowding: weights.crowding,
+            },
+            budget
+          );
+          const action = suggestAction(result);
+          const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+          const scored = await storage.updateOpportunity(opp.id, {
+            compositeScore: result.compositeScore,
+            probabilityOfSuccess: result.probabilityOfSuccess,
+            expectedEdge: result.expectedEdge,
+            kellyFraction: result.kellyFraction,
+            convictionBand: result.convictionBand,
+            suggestedAllocation: result.suggestedAllocation,
+            targetPrice: priceLevels.targetPrice,
+            stopLoss: priceLevels.stopLoss,
+            status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+            updatedAt: now,
+          });
+
+          await storage.createPrediction({
+            opportunityId: opp.id,
+            action,
+            compositeScore: result.compositeScore,
+            probabilityOfSuccess: result.probabilityOfSuccess,
+            expectedEdge: result.expectedEdge,
+            kellyFraction: result.kellyFraction,
+            convictionBand: result.convictionBand,
+            suggestedAllocation: result.suggestedAllocation,
+            entryPrice: signals.metadata.price,
+            targetPrice: priceLevels.targetPrice,
+            stopLoss: priceLevels.stopLoss,
+            currentPrice: signals.metadata.price,
+            reasoning: `Track-This auto-scored: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+            signalSnapshot: JSON.stringify({ ...signals, weights }),
+            timestamp: now,
+          });
+
+          return res.json({ ...scored, autoScored: true });
+        }
+      } catch (scoreErr: any) {
+        console.error(`[scan-universe/add] Auto-score failed for ${ticker}: ${scoreErr.message}`);
+      }
+
       res.json(opp);
     } catch (e: any) {
       res.status(400).json({ error: e.message });

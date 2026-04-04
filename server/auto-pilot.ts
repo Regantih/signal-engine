@@ -1,0 +1,157 @@
+import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
+import { computeAutoSignals } from "./auto-signals";
+import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
+import { storage } from "./storage";
+import { DEFAULT_WEIGHTS } from "@shared/schema";
+
+const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
+
+async function autoScoreTicker(ticker: string): Promise<boolean> {
+  try {
+    const signals = await computeAutoSignals(ticker);
+    if (!signals) {
+      console.log(`[autopilot] Could not compute signals for ${ticker}, skipping`);
+      return false;
+    }
+
+    const opps = await storage.getOpportunities();
+    const opp = opps.find(o => o.ticker?.toUpperCase() === ticker.toUpperCase());
+    if (!opp) return false;
+
+    const now = new Date().toISOString();
+
+    await storage.updateOpportunity(opp.id, {
+      momentum: signals.momentum,
+      meanReversion: signals.meanReversion,
+      quality: signals.quality,
+      flow: signals.flow,
+      risk: signals.risk,
+      crowding: signals.crowding,
+      entryPrice: signals.metadata.price,
+      updatedAt: now,
+    });
+
+    const weights = await storage.getWeights(opp.domain) || {
+      momentum: DEFAULT_WEIGHTS.momentum,
+      meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+      quality: DEFAULT_WEIGHTS.quality,
+      flow: DEFAULT_WEIGHTS.flow,
+      risk: DEFAULT_WEIGHTS.risk,
+      crowding: DEFAULT_WEIGHTS.crowding,
+    };
+
+    const portfolio = await storage.getPortfolio();
+    const budget = portfolio?.cashRemaining || 100;
+
+    const result = scoreOpportunity(
+      {
+        momentum: signals.momentum,
+        meanReversion: signals.meanReversion,
+        quality: signals.quality,
+        flow: signals.flow,
+        risk: signals.risk,
+        crowding: signals.crowding,
+      },
+      {
+        momentum: weights.momentum,
+        meanReversion: weights.meanReversion,
+        quality: weights.quality,
+        flow: weights.flow,
+        risk: weights.risk,
+        crowding: weights.crowding,
+      },
+      budget
+    );
+
+    const action = suggestAction(result);
+    const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+    await storage.updateOpportunity(opp.id, {
+      compositeScore: result.compositeScore,
+      probabilityOfSuccess: result.probabilityOfSuccess,
+      expectedEdge: result.expectedEdge,
+      kellyFraction: result.kellyFraction,
+      convictionBand: result.convictionBand,
+      suggestedAllocation: result.suggestedAllocation,
+      targetPrice: priceLevels.targetPrice,
+      stopLoss: priceLevels.stopLoss,
+      status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+      updatedAt: now,
+    });
+
+    await storage.createPrediction({
+      opportunityId: opp.id,
+      action,
+      compositeScore: result.compositeScore,
+      probabilityOfSuccess: result.probabilityOfSuccess,
+      expectedEdge: result.expectedEdge,
+      kellyFraction: result.kellyFraction,
+      convictionBand: result.convictionBand,
+      suggestedAllocation: result.suggestedAllocation,
+      entryPrice: signals.metadata.price,
+      targetPrice: priceLevels.targetPrice,
+      stopLoss: priceLevels.stopLoss,
+      currentPrice: signals.metadata.price,
+      reasoning: `Autopilot auto-scored: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+      signalSnapshot: JSON.stringify({ ...signals, weights }),
+      timestamp: now,
+    });
+
+    return true;
+  } catch (e: any) {
+    console.error(`[autopilot] Error scoring ${ticker}: ${e.message}`);
+    return false;
+  }
+}
+
+async function runAutopilot(): Promise<void> {
+  try {
+    console.log("[autopilot] Scanning universe...");
+    const scanResults = await scanUniverse();
+    console.log(`[autopilot] Found ${scanResults.length} tickers from screeners`);
+
+    // Add new tickers as opportunities
+    let added = 0;
+    for (const result of scanResults) {
+      if (result.isNew) {
+        try {
+          await addScannedOpportunity(result.ticker, result.name, result.screeners);
+          added++;
+        } catch (e: any) {
+          console.error(`[autopilot] Error adding ${result.ticker}: ${e.message}`);
+        }
+      }
+    }
+    if (added > 0) {
+      console.log(`[autopilot] Added ${added} new opportunities`);
+    }
+
+    // Auto-score ALL opportunities with tickers
+    const allOpps = await storage.getOpportunities();
+    const marketOpps = allOpps.filter(o => o.domain === "public_markets" && o.ticker);
+    console.log(`[autopilot] Scoring ${marketOpps.length} opportunities...`);
+
+    let scored = 0;
+    for (const opp of marketOpps) {
+      const ok = await autoScoreTicker(opp.ticker!);
+      if (ok) scored++;
+    }
+
+    console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
+  } catch (e: any) {
+    console.error(`[autopilot] Error in autopilot cycle: ${e.message}`);
+  }
+}
+
+export function startAutopilot(): void {
+  console.log(`[autopilot] Will start in ${STARTUP_DELAY_MS / 1000}s, then repeat every ${INTERVAL_MS / 60000}min`);
+
+  // Initial run after delay
+  setTimeout(async () => {
+    await runAutopilot();
+
+    // Repeat every 5 minutes
+    setInterval(runAutopilot, INTERVAL_MS);
+  }, STARTUP_DELAY_MS);
+}
