@@ -19,6 +19,20 @@ export interface ScanResult {
   opportunity?: any;
 }
 
+// In-memory cache of last scan results
+let lastScanResults: ScanResult[] | null = null;
+let lastScanTimestamp: string | null = null;
+
+export function getLastScanResults(): { results: ScanResult[]; totalHits: number; timestamp: string } | null {
+  if (!lastScanResults || !lastScanTimestamp) return null;
+  return { results: lastScanResults, totalHits: lastScanResults.length, timestamp: lastScanTimestamp };
+}
+
+export function setLastScanResults(results: ScanResult[]): void {
+  lastScanResults = results;
+  lastScanTimestamp = new Date().toISOString();
+}
+
 export async function scanUniverse(): Promise<ScanResult[]> {
   console.log("[scanner] Starting universe scan...");
 

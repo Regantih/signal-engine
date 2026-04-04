@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -157,6 +157,17 @@ export default function Scanner() {
   const [trackingSet, setTrackingSet] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
+  // Auto-load last scan results on page mount
+  const { data: cachedScan } = useQuery<ScanResponse>({
+    queryKey: ["/api/scan-universe"],
+  });
+
+  useEffect(() => {
+    if (cachedScan && cachedScan.timestamp && !scanData) {
+      setScanData(cachedScan);
+    }
+  }, [cachedScan]);
+
   const { data: opportunities } = useQuery<Opportunity[]>({
     queryKey: ["/api/opportunities"],
   });
@@ -172,6 +183,7 @@ export default function Scanner() {
     },
     onSuccess: (data) => {
       setScanData(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/scan-universe"] });
       toast({
         title: `Scan complete — ${data.totalHits} tickers found`,
         description: `${data.results.filter((r) => r.isNew).length} new opportunities detected`,

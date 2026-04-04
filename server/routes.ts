@@ -5,7 +5,7 @@ import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-e
 import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 import { computeAutoSignals } from "./auto-signals";
-import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
+import { scanUniverse, addScannedOpportunity, getLastScanResults, setLastScanResults } from "./universe-scanner";
 import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
 import { executePaperTrade, getPaperPositions, getPaperOrders, closePaperPosition, closeAllPaperPositions, getPaperAccountSummary } from "./paper-trading";
 import { evaluateOutcomes, computeSignalAccuracy, autoTuneWeights } from "./feedback-engine";
@@ -1179,10 +1179,20 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   // UNIVERSE SCANNER
   // ========================
 
+  // GET /api/scan-universe — Return last cached scan results
+  app.get("/api/scan-universe", async (_req, res) => {
+    const cached = getLastScanResults();
+    if (!cached) {
+      return res.json({ results: [], totalHits: 0, timestamp: null });
+    }
+    res.json(cached);
+  });
+
   // POST /api/scan-universe — Run all screeners to find new opportunities
   app.post("/api/scan-universe", async (_req, res) => {
     try {
       const results = await scanUniverse();
+      setLastScanResults(results);
       res.json({ results, totalHits: results.length, timestamp: new Date().toISOString() });
     } catch (e: any) {
       res.status(400).json({ error: e.message });

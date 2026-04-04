@@ -1,4 +1,4 @@
-import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
+import { scanUniverse, addScannedOpportunity, setLastScanResults } from "./universe-scanner";
 import { computeAutoSignals } from "./auto-signals";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { storage } from "./storage";
@@ -152,6 +152,7 @@ async function runAutopilot(): Promise<void> {
   try {
     console.log("[autopilot] Scanning universe...");
     const scanResults = await scanUniverse();
+    setLastScanResults(scanResults);
     console.log(`[autopilot] Found ${scanResults.length} tickers from screeners`);
 
     // Add new tickers as opportunities
