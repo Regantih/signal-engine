@@ -870,7 +870,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   app.post("/api/auto-score/:ticker", async (req, res) => {
     try {
       const ticker = req.params.ticker.toUpperCase();
-      const signals = computeAutoSignals(ticker);
+      const signals = await computeAutoSignals(ticker);
 
       if (!signals) {
         return res.status(400).json({ error: `Could not compute signals for ${ticker}. Finance data unavailable.` });
@@ -988,7 +988,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       for (const opp of marketOpps) {
         try {
           const ticker = opp.ticker!.toUpperCase();
-          const signals = computeAutoSignals(ticker);
+          const signals = await computeAutoSignals(ticker);
           if (signals) {
             results.push({
               ticker,
@@ -1219,7 +1219,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
 
       // Kill switch check
       try {
-        const macro = fetchMacroSnapshot();
+        const macro = await fetchMacroSnapshot();
         if (macro.regime === "CRISIS") {
           return res.status(403).json({ error: "KILL SWITCH ACTIVE: Market in CRISIS regime. No new trades allowed.", regime: macro.regime });
         }
@@ -1234,7 +1234,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       // CRITICAL: Fetch CURRENT market price for execution, not stale entry price
       let currentPrice = opp.entryPrice || 0;
       try {
-        const signals = computeAutoSignals(opp.ticker);
+        const signals = await computeAutoSignals(opp.ticker);
         if (signals?.metadata?.price && signals.metadata.price > 0) {
           currentPrice = signals.metadata.price;
           // Update opportunity with fresh price and signals
@@ -1513,7 +1513,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   // GET /api/macro — Get current macro environment snapshot
   app.get("/api/macro", async (_req, res) => {
     try {
-      const snapshot = fetchMacroSnapshot();
+      const snapshot = await fetchMacroSnapshot();
       res.json(snapshot);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1523,7 +1523,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   // GET /api/intelligence — Full market intelligence snapshot
   app.get("/api/intelligence", async (_req, res) => {
     try {
-      const intel = fetchFullIntelligence();
+      const intel = await fetchFullIntelligence();
       res.json(intel);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1602,7 +1602,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       if (action === "BUY") {
         // Kill switch check for BUY approvals
         try {
-          const macro = fetchMacroSnapshot();
+          const macro = await fetchMacroSnapshot();
           if (macro.regime === "CRISIS") {
             return res.status(403).json({ error: "KILL SWITCH ACTIVE: Market in CRISIS regime. No new trades allowed.", regime: macro.regime });
           }

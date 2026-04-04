@@ -1,32 +1,4 @@
-import { getExecEnv } from "./credentials";
-import { execSync } from "child_process";
-
-// ──────────────────────────────────────────────
-// Shared helper (same pattern as screeners.ts)
-// ──────────────────────────────────────────────
-
-function callFinanceTool(toolName: string, args: Record<string, any>): any {
-  const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
-  try {
-    const escaped = params.replace(/'/g, "'\\''");
-    const result = execSync(`external-tool call '${escaped}'`, {
-      timeout: 30000,
-      encoding: "utf-8",
-      env: getExecEnv() as any,
-    });
-    return JSON.parse(result);
-  } catch (e: any) {
-    console.error(`[macro] Finance tool error (${toolName}):`, e.stderr?.slice(0, 200) || e.message?.slice(0, 200));
-    return null;
-  }
-}
-
-import { parseCSVContent } from "./csv-parser";
-
-function parseNumber(s: string | undefined): number {
-  if (!s) return 0;
-  return parseFloat(s.replace(/[$,\s%]/g, "")) || 0;
-}
+import { fetchMacroQuotes, deriveSentiment } from "./market-data-provider";
 
 // ──────────────────────────────────────────────
 // Public Interface
@@ -116,33 +88,24 @@ function computeRegime(
   yield10yChange: number,
   sentiment: string,
 ): { regime: MacroSnapshot["regime"]; adjustmentFactor: number } {
-  // CRISIS: VIX > 40 + gold surging + yields spiking
   if (vixValue > 40 && goldChange > 1.5 && yield10yChange > 0.1) {
     return { regime: "CRISIS", adjustmentFactor: 0.3 };
   }
-  // Also crisis if VIX extremely high
   if (vixValue > 45) {
     return { regime: "CRISIS", adjustmentFactor: 0.3 };
   }
-
-  // RISK_OFF: VIX > 30, market trending down, bearish sentiment
   if (vixValue > 30) {
     return { regime: "RISK_OFF", adjustmentFactor: 0.7 };
   }
   if (vixValue > 25 && sp500Change < -1 && sentiment === "bearish") {
     return { regime: "RISK_OFF", adjustmentFactor: 0.7 };
   }
-
-  // RISK_ON: VIX < 20, S&P up, sentiment bullish
   if (vixValue < 20 && sp500Change > 0 && sentiment === "bullish") {
     return { regime: "RISK_ON", adjustmentFactor: 1.3 };
   }
-  // Partial risk-on: low VIX and modest gains
   if (vixValue < 18 && sp500Change >= 0) {
     return { regime: "RISK_ON", adjustmentFactor: 1.3 };
   }
-
-  // NEUTRAL: everything else
   return { regime: "NEUTRAL", adjustmentFactor: 1.0 };
 }
 
@@ -177,209 +140,40 @@ function buildSummary(snapshot: Omit<MacroSnapshot, "summary">): string {
 }
 
 // ──────────────────────────────────────────────
-// Macro extraction helpers
-// ──────────────────────────────────────────────
-
-function extractMacroValue(
-  rows: Record<string, string>[],
-  exactCategories: string[],
-  fallbackKeywords: string[],
-): number | null {
-  // First try exact category match
-  for (const row of rows) {
-    const category = (row["category"] || row["Category"] || "").toLowerCase().trim();
-    const matchesExact = exactCategories.some((cat) => category === cat.toLowerCase());
-    if (!matchesExact) continue;
-
-    const valStr = row["latest_value"] || row["Latest Value"] || row["value"] || row["Value"] || "";
-    const num = parseFloat(valStr.replace(/[$%,\s]/g, ""));
-    if (!isNaN(num) && isFinite(num)) return num;
-  }
-
-  // Fallback: keyword search in all columns
-  for (const row of rows) {
-    const rowStr = JSON.stringify(row).toLowerCase();
-    const matchesKeyword = fallbackKeywords.some((kw) => rowStr.includes(kw.toLowerCase()));
-    if (!matchesKeyword) continue;
-
-    const valStr = row["latest_value"] || row["Latest Value"] || row["value"] || row["Value"] || "";
-    const num = parseFloat(valStr.replace(/[$%,\s]/g, ""));
-    if (!isNaN(num) && isFinite(num) && num !== 0) return num;
-  }
-  return null;
-}
-
-// ──────────────────────────────────────────────
 // Main export
 // ──────────────────────────────────────────────
 
-export function fetchMacroSnapshot(): MacroSnapshot {
+export async function fetchMacroSnapshot(): Promise<MacroSnapshot> {
   console.log("[macro] Fetching macro environment snapshot...");
 
-  // 1. Fetch market quotes
-  const quotesResp = callFinanceTool("finance_quotes", {
-    ticker_symbols: ["EURUSD", "USDJPY", "^VIX", "^GSPC", "^IXIC", "GC=F", "CL=F", "^TNX"],
-    fields: ["price", "change", "changesPercentage"],
-    action: "Fetching macro market quotes",
-  });
+  const mq = await fetchMacroQuotes();
 
-  // 2. Fetch market sentiment
-  const sentimentResp = callFinanceTool("finance_market_sentiment", {
-    market_type: "market",
-    country: "US",
-    query: "current market sentiment",
-    action: "Analyzing market sentiment",
-  });
+  const sentimentStr = deriveSentiment(mq.vix.price, mq.sp500.changePct);
 
-  // 3. Fetch macro snapshot
-  const macroResp = callFinanceTool("finance_macro_snapshot", {
-    countries: ["United States"],
-    keywords: ["interest rate", "inflation", "unemployment", "GDP growth"],
-    action: "Fetching US macro indicators",
-  });
+  // Macro indicators — no free real-time API, return null (frontend handles this)
+  const gdpGrowth: number | null = null;
+  const inflationRate: number | null = null;
+  const interestRate: number | null = null;
+  const unemploymentRate: number | null = null;
 
-  // ── Parse quotes ──
-  const quoteMap: Record<string, { price: number; change: number; changePct: number }> = {};
-
-  if (quotesResp?.content) {
-    const rows = parseCSVContent(quotesResp.content);
-    for (const row of rows) {
-      const sym =
-        row["Symbol"] || row["symbol"] || row["Ticker"] || row["ticker"] || "";
-      if (!sym) continue;
-
-      const price = parseNumber(
-        row["Price"] || row["price"] || row["Last"] || row["last"] || "0",
-      );
-      const change = parseNumber(
-        row["Change"] || row["change"] || row["Chg"] || row["chg"] || "0",
-      );
-      const changePct = parseNumber(
-        row["Change %"] ||
-        row["changesPercentage"] ||
-        row["% Change"] ||
-        row["Chg %"] ||
-        "0",
-      );
-
-      quoteMap[sym.toUpperCase()] = { price, change, changePct };
-    }
-  }
-
-  // Helper to extract from quoteMap with symbol fallbacks
-  const getQuote = (...syms: string[]) => {
-    for (const s of syms) {
-      const q = quoteMap[s.toUpperCase()];
-      if (q) return q;
-    }
-    return { price: 0, change: 0, changePct: 0 };
-  };
-
-  const vixQ = getQuote("^VIX", "VIX");
-  const sp500Q = getQuote("^GSPC", "GSPC");
-  const nasdaqQ = getQuote("^IXIC", "IXIC");
-  const eurQ = getQuote("EURUSD", "EUR/USD");
-  const jpyQ = getQuote("USDJPY", "USD/JPY");
-  const goldQ = getQuote("GC=F", "GCF", "GOLD");
-  const oilQ = getQuote("CL=F", "CLF", "OIL");
-  const yieldQ = getQuote("^TNX", "TNX");
-  const dxyQ = getQuote("DX-Y.NYB", "DXY");
-
-  // ── Parse sentiment ──
-  let sentimentStr = "neutral";
-  if (sentimentResp?.content) {
-    const content = sentimentResp.content.toLowerCase();
-    if (content.includes("bullish") || content.includes("bull")) {
-      sentimentStr = "bullish";
-    } else if (content.includes("bearish") || content.includes("bear")) {
-      sentimentStr = "bearish";
-    } else {
-      sentimentStr = "neutral";
-    }
-  }
-
-  // ── Parse macro indicators ──
-  let gdpGrowth: number | null = null;
-  let inflationRate: number | null = null;
-  let interestRate: number | null = null;
-  let unemploymentRate: number | null = null;
-
-  if (macroResp?.content) {
-    const rows = parseCSVContent(macroResp.content);
-    gdpGrowth = extractMacroValue(rows, ["GDP Growth Rate", "GDP Annual Growth Rate"], ["gdp", "growth"]);
-    inflationRate = extractMacroValue(rows, ["Inflation Rate"], ["inflation", "cpi"]);
-    interestRate = extractMacroValue(rows, ["Interest Rate"], ["interest rate", "fed"]);
-    unemploymentRate = extractMacroValue(rows, ["Unemployment Rate"], ["unemployment rate"]);
-  }
-
-  // ── Compute regime ──
-  const vixValue = vixQ.price || 20;
-  const sp500ChangePct = sp500Q.changePct;
-  const goldChangePct = goldQ.changePct;
-  const yieldChange = yieldQ.change;
-
+  const vixValue = mq.vix.price || 20;
   const { regime, adjustmentFactor } = computeRegime(
     vixValue,
-    sp500ChangePct,
-    goldChangePct,
-    yieldChange,
+    mq.sp500.changePct,
+    mq.gold.changePct,
+    mq.yield10y.change,
     sentimentStr,
   );
 
-  // ── Build structured fields ──
-  const vixField = {
-    value: vixValue,
-    change: vixQ.changePct,
-    signal: vixSignal(vixValue, vixQ.changePct),
-  };
-
-  const sp500Field = {
-    value: sp500Q.price,
-    change: sp500Q.changePct,
-    signal: priceSignal(sp500Q.changePct),
-  };
-
-  const nasdaqField = {
-    value: nasdaqQ.price,
-    change: nasdaqQ.changePct,
-    signal: priceSignal(nasdaqQ.changePct),
-  };
-
-  const dxyField = {
-    value: dxyQ.price,
-    change: dxyQ.changePct,
-    signal: fxSignal(dxyQ.changePct),
-  };
-
-  const eurField = {
-    value: eurQ.price,
-    change: eurQ.changePct,
-    signal: fxSignal(eurQ.changePct),
-  };
-
-  const jpyField = {
-    value: jpyQ.price,
-    change: jpyQ.changePct,
-    signal: fxSignal(jpyQ.changePct),
-  };
-
-  const goldField = {
-    value: goldQ.price,
-    change: goldQ.changePct,
-    signal: goldSignal(goldQ.changePct),
-  };
-
-  const oilField = {
-    value: oilQ.price,
-    change: oilQ.changePct,
-    signal: oilSignal(oilQ.changePct),
-  };
-
-  const yieldField = {
-    value: yieldQ.price,
-    change: yieldQ.changePct,
-    signal: yieldSignal(yieldQ.price, yieldQ.change),
-  };
+  const vixField = { value: vixValue, change: mq.vix.changePct, signal: vixSignal(vixValue, mq.vix.changePct) };
+  const sp500Field = { value: mq.sp500.price, change: mq.sp500.changePct, signal: priceSignal(mq.sp500.changePct) };
+  const nasdaqField = { value: mq.nasdaq.price, change: mq.nasdaq.changePct, signal: priceSignal(mq.nasdaq.changePct) };
+  const dxyField = { value: mq.dxy.price, change: mq.dxy.changePct, signal: fxSignal(mq.dxy.changePct) };
+  const eurField = { value: mq.eurusd.price, change: mq.eurusd.changePct, signal: fxSignal(mq.eurusd.changePct) };
+  const jpyField = { value: mq.usdjpy.price, change: mq.usdjpy.changePct, signal: fxSignal(mq.usdjpy.changePct) };
+  const goldField = { value: mq.gold.price, change: mq.gold.changePct, signal: goldSignal(mq.gold.changePct) };
+  const oilField = { value: mq.oil.price, change: mq.oil.changePct, signal: oilSignal(mq.oil.changePct) };
+  const yieldField = { value: mq.yield10y.price, change: mq.yield10y.changePct, signal: yieldSignal(mq.yield10y.price, mq.yield10y.change) };
 
   const partial: Omit<MacroSnapshot, "summary"> = {
     regime,

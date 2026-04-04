@@ -1,6 +1,6 @@
-import { execSync } from "child_process";
 import { storage } from "./storage";
 import { evaluatePosition, type Position } from "./risk-manager";
+import { fetchQuotes, type QuoteData } from "./market-data-provider";
 import type { Response } from "express";
 
 // Connected SSE clients
@@ -16,32 +16,8 @@ let isRunning = false;
 let pollInterval: NodeJS.Timeout | null = null;
 let tickCount = 0;
 
-// Token refresh: the site proxy updates process.env on each incoming request
-// We need to capture the latest env vars for background polling
-let latestEnv: Record<string, string> = {};
-
-function callFinanceTool(toolName: string, args: Record<string, any>): any {
-  const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
-  try {
-    const escaped = params.replace(/'/g, "'\\''");
-    // Use latest captured env (refreshed by proxy on each request)
-    const { getExecEnv } = require("./credentials");
-    return JSON.parse(execSync(`external-tool call '${escaped}'`, { timeout: 30000, encoding: "utf-8", env: getExecEnv() as any }));
-  } catch (e: any) {
-    console.error(`[realtime] Finance tool error (${toolName}):`, e.stderr?.slice(0, 100) || e.message?.slice(0, 100));
-    return null;
-  }
-}
-
-// Call this from request handlers to capture fresh proxy-injected env
-export function refreshCredentials() {
-  const key = process.env.ASI_EXTERNAL_TOOLS_KEY;
-  const endpoint = process.env.ASI_EXTERNAL_TOOLS_ENDPOINT;
-  if (key) latestEnv.ASI_EXTERNAL_TOOLS_KEY = key;
-  if (endpoint) latestEnv.ASI_EXTERNAL_TOOLS_ENDPOINT = endpoint;
-}
-
-import { parseCSVContent } from "./csv-parser";
+// No-op: kept for backward compatibility with any callers
+export function refreshCredentials() {}
 
 // Broadcast to all connected SSE clients
 function broadcast(event: string, data: any) {
@@ -59,30 +35,23 @@ async function pollPrices() {
   if (tickers.length === 0) return;
 
   // Also add key market indicators
-  const allSymbols = [...tickers, "^VIX", "^GSPC", "BTCUSD"];
+  const allSymbols = [...tickers, "^VIX", "^GSPC", "BTC-USD"];
 
-  // Batch into groups of 10 (API limit)
-  for (let i = 0; i < allSymbols.length; i += 10) {
-    const batch = allSymbols.slice(i, i + 10);
-    const resp = callFinanceTool("finance_quotes", {
-      ticker_symbols: batch,
-      fields: ["price", "change", "changesPercentage", "volume"],
-    });
+  // Batch into groups of 20
+  for (let i = 0; i < allSymbols.length; i += 20) {
+    const batch = allSymbols.slice(i, i + 20);
+    const quotes = await fetchQuotes(batch);
+    const now = new Date().toISOString();
 
-    if (resp?.content) {
-      const rows = parseCSVContent(resp.content);
-      const now = new Date().toISOString();
-
-      for (const row of rows) {
-        const symbol = row.symbol || "";
-        const price = parseFloat(row.price?.replace(/,/g, "") || "0");
-        const change = parseFloat(row.change?.replace(/,/g, "") || "0");
-        const changePct = parseFloat(row.changesPercentage || "0");
-        const volume = parseInt(row.volume?.replace(/,/g, "") || "0");
-
-        if (price > 0) {
-          priceCache.set(symbol, { price, change, changePct, volume, updatedAt: now });
-        }
+    for (const q of quotes) {
+      if (q.price > 0) {
+        priceCache.set(q.symbol, {
+          price: q.price,
+          change: q.change,
+          changePct: q.changePct,
+          volume: q.volume,
+          updatedAt: now,
+        });
       }
     }
   }
@@ -113,7 +82,6 @@ async function checkRiskRules(opps: any[]) {
 
     const allData = await storage.getMarketData(ticker);
     const recentPrices = allData.slice(-6).map(d => d.close);
-    // Add the live price as the most recent
     recentPrices.push(cached.price);
 
     const highWaterMark = Math.max(opp.entryPrice!, ...recentPrices);
@@ -172,7 +140,6 @@ export function stopRealtime() {
 
 export function addClient(res: Response) {
   clients.add(res);
-  // Send current cache immediately
   const prices: Record<string, any> = {};
   for (const [symbol, data] of priceCache) prices[symbol] = data;
   res.write(`event: prices\ndata: ${JSON.stringify({ prices, tickCount, timestamp: new Date().toISOString() })}\n\n`);
