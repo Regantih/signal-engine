@@ -315,7 +315,7 @@ export default function Trading() {
 
   // Pipeline mutation
   const pipelineMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/pipeline/run", {}),
+    mutationFn: async () => { const res = await apiRequest("POST", "/api/pipeline/run", {}); return res.json(); },
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["/api/opportunities"] });
       qc.invalidateQueries({ queryKey: ["/api/capital"] });
@@ -323,7 +323,7 @@ export default function Trading() {
       qc.invalidateQueries({ queryKey: ["/api/sell-signals"] });
       qc.invalidateQueries({ queryKey: ["/api/predictions"] });
       setPipelineResult(data);
-      toast({ title: `Pipeline complete: ${data.buySignals} buys, ${data.sellSignals} sells` });
+      toast({ title: `Pipeline complete: ${data?.buySignals ?? 0} buys, ${data?.sellSignals ?? 0} sells` });
     },
     onError: (e: any) => {
       toast({ variant: "destructive", title: "Pipeline Failed", description: e.message });
@@ -439,11 +439,11 @@ export default function Trading() {
   });
 
   const autoTuneMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/feedback/auto-tune"),
+    mutationFn: async () => { const res = await apiRequest("POST", "/api/feedback/auto-tune"); return res.json(); },
     onSuccess: (data: any) => {
       toast({
         title: "Weights Auto-Tuned",
-        description: `${data.rescoredCount} opportunities rescored with new weights`,
+        description: `${data?.rescoredCount ?? 0} opportunities rescored with new weights`,
       });
       qc.invalidateQueries({ queryKey: ["/api/opportunities"] });
       qc.invalidateQueries({ queryKey: ["/api/weights"] });

@@ -965,13 +965,94 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
 
         res.json({ signals, score: result, action, opportunity: updated, metadata: signals.metadata });
       } else {
-        // No matching opportunity — just return the computed signals
-        res.json({
-          signals,
-          metadata: signals.metadata,
-          opportunity: null,
-          message: `No opportunity found with ticker ${ticker}. Signals computed but not saved.`,
+        // No matching opportunity — create one and score it
+        const now = new Date().toISOString();
+        const newOpp = await storage.createOpportunity({
+          name: ticker,
+          ticker,
+          domain: "public_markets",
+          description: `Auto-created from live data scoring`,
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+          entryPrice: signals.metadata.price,
+          targetPrice: null,
+          stopLoss: null,
+          status: "watch",
+          createdAt: now,
+          updatedAt: now,
         });
+
+        // Score the new opportunity
+        const weights = await storage.getWeights("public_markets") || {
+          momentum: DEFAULT_WEIGHTS.momentum,
+          meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+          quality: DEFAULT_WEIGHTS.quality,
+          flow: DEFAULT_WEIGHTS.flow,
+          risk: DEFAULT_WEIGHTS.risk,
+          crowding: DEFAULT_WEIGHTS.crowding,
+        };
+        const portfolio = await storage.getPortfolio();
+        const budget = portfolio?.cashRemaining || 100;
+
+        const result = scoreOpportunity(
+          {
+            momentum: signals.momentum,
+            meanReversion: signals.meanReversion,
+            quality: signals.quality,
+            flow: signals.flow,
+            risk: signals.risk,
+            crowding: signals.crowding,
+          },
+          {
+            momentum: weights.momentum,
+            meanReversion: weights.meanReversion,
+            quality: weights.quality,
+            flow: weights.flow,
+            risk: weights.risk,
+            crowding: weights.crowding,
+          },
+          budget
+        );
+
+        const action = suggestAction(result);
+        const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+        const updated = await storage.updateOpportunity(newOpp.id, {
+          compositeScore: result.compositeScore,
+          probabilityOfSuccess: result.probabilityOfSuccess,
+          expectedEdge: result.expectedEdge,
+          kellyFraction: result.kellyFraction,
+          convictionBand: result.convictionBand,
+          suggestedAllocation: result.suggestedAllocation,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          updatedAt: now,
+        });
+
+        await storage.createPrediction({
+          opportunityId: newOpp.id,
+          action,
+          compositeScore: result.compositeScore,
+          probabilityOfSuccess: result.probabilityOfSuccess,
+          expectedEdge: result.expectedEdge,
+          kellyFraction: result.kellyFraction,
+          convictionBand: result.convictionBand,
+          suggestedAllocation: result.suggestedAllocation,
+          entryPrice: signals.metadata.price,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          currentPrice: signals.metadata.price,
+          reasoning: `Auto-scored from live data: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+          signalSnapshot: JSON.stringify({ ...signals, weights }),
+          timestamp: now,
+        });
+
+        res.json({ signals, score: result, action, opportunity: updated, metadata: signals.metadata });
       }
     } catch (e: any) {
       res.status(400).json({ error: e.message });

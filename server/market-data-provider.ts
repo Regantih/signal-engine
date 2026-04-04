@@ -97,13 +97,26 @@ export async function fetchQuotes(symbols: string[]): Promise<QuoteData[]> {
   const allQuotes: QuoteData[] = [];
 
   for (const sym of symbols) {
+    // Use 5d range to ensure we get a real previous close even when market is closed
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`;
     const data = yahooFetch(url);
-    const meta = data?.chart?.result?.[0]?.meta;
+    const result = data?.chart?.result?.[0];
+    const meta = result?.meta;
     if (!meta) continue;
 
-    const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? 0;
     const price = meta.regularMarketPrice ?? 0;
+    let prevClose = meta.chartPreviousClose ?? meta.previousClose ?? 0;
+
+    // When chartPreviousClose equals the current price (stale data, e.g. outside market hours),
+    // fall back to the second-to-last close from the OHLCV series for an accurate change value
+    if (prevClose === price || prevClose === 0) {
+      const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
+      const validCloses = closes.filter((c): c is number => c != null);
+      if (validCloses.length >= 2) {
+        prevClose = validCloses[validCloses.length - 2];
+      }
+    }
+
     const change = prevClose > 0 ? price - prevClose : 0;
     const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
 

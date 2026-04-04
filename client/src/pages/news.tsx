@@ -121,11 +121,12 @@ export default function News() {
 
   const { data: newsData, isLoading } = useQuery<{ news: NewsItem[]; count: number }>({
     queryKey: ["/api/benzinga/news", tickerFilter],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (tickerFilter) params.set("ticker", tickerFilter);
       params.set("limit", "100");
-      return apiRequest("GET", `/api/benzinga/news?${params}`);
+      const res = await apiRequest("GET", `/api/benzinga/news?${params}`);
+      return res.json();
     },
   });
 

@@ -90,7 +90,7 @@ export default function PerformancePage() {
 
   const { data: livePnl, isLoading: pnlLoading } = useQuery<LivePnlResponse>({
     queryKey: ["/api/live-pnl"],
-    queryFn: () => apiRequest("GET", "/api/live-pnl"),
+    queryFn: async () => { const res = await apiRequest("GET", "/api/live-pnl"); return res.json(); },
     refetchInterval: 30000,
   });
 

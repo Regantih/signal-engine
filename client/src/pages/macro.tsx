@@ -326,7 +326,7 @@ function ProbabilityBar({ probability }: { probability: number | null | undefine
   const color =
     safeProbability >= 70
       ? "bg-emerald-500"
-      : probability >= 40
+      : safeProbability >= 40
       ? "bg-amber-500"
       : "bg-red-500";
   return (
@@ -368,7 +368,10 @@ export default function MacroPage() {
     isFetching,
   } = useQuery<MacroSnapshot>({
     queryKey: ["/api/macro"],
-    queryFn: () => apiRequest("GET", "/api/macro"),
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/macro");
+      return res.json();
+    },
     staleTime: 60_000,
   });
 
@@ -378,7 +381,10 @@ export default function MacroPage() {
     isFetching: intelFetching,
   } = useQuery<IntelligenceSnapshot>({
     queryKey: ["/api/intelligence"],
-    queryFn: () => apiRequest("GET", "/api/intelligence"),
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/intelligence");
+      return res.json();
+    },
     staleTime: 120_000,
   });
 
@@ -481,50 +487,50 @@ export default function MacroPage() {
             <>
               <MarketCard
                 label="S&P 500"
-                field={snapshot.sp500}
+                field={snapshot.sp500 ?? { value: 0, change: 0, signal: "" }}
                 icon={TrendingUp}
                 priceDecimals={0}
               />
               <MarketCard
                 label="NASDAQ"
-                field={snapshot.nasdaq}
+                field={snapshot.nasdaq ?? { value: 0, change: 0, signal: "" }}
                 icon={Activity}
                 priceDecimals={0}
               />
               <MarketCard
                 label="VIX Fear Index"
-                field={snapshot.vix}
+                field={snapshot.vix ?? { value: 0, change: 0, signal: "" }}
                 icon={Shield}
                 isVix
               />
               <MarketCard
                 label="10Y Yield"
-                field={snapshot.yield10y}
+                field={snapshot.yield10y ?? { value: 0, change: 0, signal: "" }}
                 icon={BarChart3}
                 isYield
               />
               <MarketCard
                 label="EUR / USD"
-                field={snapshot.eurusd}
+                field={snapshot.eurusd ?? { value: 0, change: 0, signal: "" }}
                 icon={DollarSign}
                 isFx
               />
               <MarketCard
                 label="USD / JPY"
-                field={snapshot.usdjpy}
+                field={snapshot.usdjpy ?? { value: 0, change: 0, signal: "" }}
                 icon={DollarSign}
                 isFx
                 priceDecimals={3}
               />
               <MarketCard
                 label="Gold Futures"
-                field={snapshot.gold}
+                field={snapshot.gold ?? { value: 0, change: 0, signal: "" }}
                 icon={TrendingUp}
                 priceDecimals={0}
               />
               <MarketCard
                 label="Crude Oil"
-                field={snapshot.oil}
+                field={snapshot.oil ?? { value: 0, change: 0, signal: "" }}
                 icon={Fuel}
                 priceDecimals={2}
               />
@@ -645,10 +651,10 @@ export default function MacroPage() {
             </div>
           )}
         </div>
-        {intelData?.crypto?.sentiment && (
+        {intelData?.crypto && (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Crypto sentiment:</span>
-            <SentimentBadge overall={intelData.crypto.sentiment} />
+            <SentimentBadge overall={intelData.crypto.sentiment ?? "neutral"} />
           </div>
         )}
       </div>
@@ -719,7 +725,7 @@ export default function MacroPage() {
                   <Skeleton key={i} className="h-8 w-full rounded" />
                 ))}
               </div>
-            ) : intelData && intelData.congressionalTrades && intelData.congressionalTrades.length > 0 ? (
+            ) : intelData?.congressionalTrades && intelData.congressionalTrades.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -785,7 +791,7 @@ export default function MacroPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {intelLoading ? (
             Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : intelData && intelData.polymarket && intelData.polymarket.length > 0 ? (
+          ) : intelData?.polymarket && intelData.polymarket.length > 0 ? (
             intelData.polymarket.slice(0, 12).map((event, idx) => (
               <a
                 key={idx}
@@ -855,7 +861,7 @@ export default function MacroPage() {
                   {intelData.sentiment.overall === "neutral" && (
                     <Shield className="w-5 h-5 text-slate-400" />
                   )}
-                  <SentimentBadge overall={intelData.sentiment.overall} />
+                  <SentimentBadge overall={intelData.sentiment.overall ?? "neutral"} />
                   {intelData.fetchedAt && (
                     <span className="text-xs text-muted-foreground/50 ml-auto font-mono">
                       {new Date(intelData.fetchedAt).toLocaleTimeString()}

@@ -96,14 +96,14 @@ function MarketCard({ opp }: { opp: Opportunity }) {
 
   const { data: marketDataResp } = useQuery<MarketDataResponse>({
     queryKey: ["/api/market-data", opp.ticker],
-    queryFn: () => apiRequest("GET", `/api/market-data/${opp.ticker}`),
+    queryFn: async () => { const res = await apiRequest("GET", `/api/market-data/${opp.ticker}`); return res.json(); },
     enabled: !!opp.ticker,
     refetchInterval: 30000,
   });
 
   const { data: quote } = useQuery<QuoteResponse>({
     queryKey: ["/api/market-data", opp.ticker, "quote"],
-    queryFn: () => apiRequest("GET", `/api/market-data/${opp.ticker}/quote`),
+    queryFn: async () => { const res = await apiRequest("GET", `/api/market-data/${opp.ticker}/quote`); return res.json(); },
     enabled: !!opp.ticker,
     refetchInterval: 30000,
   });
@@ -238,7 +238,7 @@ function MarketCard({ opp }: { opp: Opportunity }) {
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Signals</span>
             {opp.compositeScore != null && (
               <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                Score: <span className="text-foreground">{opp.compositeScore.toFixed(3)}</span>
+                Score: <span className="text-foreground">{(opp.compositeScore ?? 0).toFixed(3)}</span>
               </span>
             )}
           </div>
@@ -447,12 +447,12 @@ export default function Market() {
                 <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
                   <span>{opp.domain.replace(/_/g, " ")}</span>
                   {opp.compositeScore != null && (
-                    <span className="font-mono">Score: {opp.compositeScore.toFixed(3)}</span>
+                    <span className="font-mono">Score: {(opp.compositeScore ?? 0).toFixed(3)}</span>
                   )}
                 </div>
                 {opp.suggestedAllocation != null && (
                   <div className="mt-2 text-xs text-muted-foreground">
-                    Allocation: <span className="font-mono text-foreground">${opp.suggestedAllocation.toFixed(2)}</span>
+                    Allocation: <span className="font-mono text-foreground">${(opp.suggestedAllocation ?? 0).toFixed(2)}</span>
                   </div>
                 )}
               </div>

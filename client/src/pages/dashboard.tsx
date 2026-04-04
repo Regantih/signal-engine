@@ -69,7 +69,7 @@ function TradingViewIntegration() {
 
   const { data: alerts } = useQuery<any[]>({
     queryKey: ["/api/webhooks/alerts"],
-    queryFn: () => apiRequest("GET", "/api/webhooks/alerts?limit=5"),
+    queryFn: async () => { const res = await apiRequest("GET", "/api/webhooks/alerts?limit=5"); return res.json(); },
   });
 
   const copyUrl = () => {
