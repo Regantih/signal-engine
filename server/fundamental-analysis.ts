@@ -1,6 +1,5 @@
-import { getExecEnv } from "./credentials";
 import { execSync } from "child_process";
-import { parseCSVContent } from "./csv-parser";
+import { fetchQuotes } from "./market-data-provider";
 
 // ========================
 // TYPES
@@ -67,30 +66,88 @@ function setCachedFundamentals(ticker: string, data: FundamentalData): void {
 }
 
 // ========================
-// EXTERNAL DATA FETCHING
+// STOCKANALYSIS.COM FETCHER
 // ========================
 
-function callFinanceTool(toolName: string, args: Record<string, any>): any {
-  const params = JSON.stringify({ source_id: "finance", tool_name: toolName, arguments: args });
+function stockAnalysisFetch(url: string): any {
   try {
-    const escaped = params.replace(/'/g, "'\\''");
-    const result = execSync(`external-tool call '${escaped}'`, {
-      timeout: 30000,
-      encoding: "utf-8",
-      env: getExecEnv() as any,
-    });
+    const safeUrl = url.replace(/'/g, "%27");
+    const result = execSync(
+      `curl -s -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" '${safeUrl}'`,
+      { encoding: "utf-8", timeout: 10000 },
+    );
     return JSON.parse(result);
-  } catch (e: any) {
-    console.error(`[fundamentals] Finance tool error (${toolName}):`, e.message?.slice(0, 200));
+  } catch {
     return null;
   }
 }
+
+function fetchOverview(ticker: string): any {
+  const url = `https://stockanalysis.com/api/symbol/s/${ticker}/overview`;
+  return stockAnalysisFetch(url);
+}
+
+function fetchFinancials(ticker: string): any {
+  const url = `https://stockanalysis.com/api/symbol/s/${ticker}/financials?p=annual`;
+  return stockAnalysisFetch(url);
+}
+
+// ========================
+// PARSE HELPERS
+// ========================
 
 function safeFloat(val: string | number | undefined | null): number | null {
   if (val === undefined || val === null || val === "" || val === "N/A" || val === "—") return null;
   const s = String(val).replace(/[,%$]/g, "");
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
+}
+
+function parseMarketCap(str: string | undefined | null): number | null {
+  if (!str) return null;
+  const s = String(str).trim();
+  const match = s.match(/^([\d.]+)\s*([TBMK]?)$/i);
+  if (!match) return safeFloat(s);
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return null;
+  const suffix = match[2].toUpperCase();
+  if (suffix === "T") return num * 1e12;
+  if (suffix === "B") return num * 1e9;
+  if (suffix === "M") return num * 1e6;
+  if (suffix === "K") return num * 1e3;
+  return num;
+}
+
+function parseDividendYield(str: string | undefined | null): number | null {
+  if (!str) return null;
+  // Format: "$1.04 (0.41%)" — extract the percentage
+  const match = String(str).match(/\(([\d.]+)%\)/);
+  if (match) return parseFloat(match[1]);
+  return null;
+}
+
+function parseAnalystTarget(str: string | undefined | null): number | null {
+  if (!str) return null;
+  // Format: "$298.94" or "298.94 (+16.81%)"
+  const match = String(str).match(/\$?([\d,.]+)/);
+  if (match) return parseFloat(match[1].replace(/,/g, ""));
+  return null;
+}
+
+function parseMoneyStr(str: string | undefined | null): number | null {
+  if (!str) return null;
+  const s = String(str).trim();
+  const match = s.match(/^-?([\d.]+)\s*([TBMK]?)$/i);
+  if (!match) return safeFloat(s);
+  const sign = s.startsWith("-") ? -1 : 1;
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return null;
+  const suffix = match[2].toUpperCase();
+  if (suffix === "T") return sign * num * 1e12;
+  if (suffix === "B") return sign * num * 1e9;
+  if (suffix === "M") return sign * num * 1e6;
+  if (suffix === "K") return sign * num * 1e3;
+  return sign * num;
 }
 
 // ========================
@@ -322,126 +379,80 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
     return cached;
   }
 
-  console.log(`[fundamentals] Fetching data for ${upperTicker}...`);
+  console.log(`[fundamentals] Fetching data for ${upperTicker} from stockanalysis.com...`);
 
-  // Fetch quote data
-  const quoteResp = callFinanceTool("finance_quotes", {
-    ticker_symbols: [upperTicker],
-    fields: [
-      "price", "pe", "forwardPE", "priceToBook", "priceToSales",
-      "marketCap", "sharesOutstanding", "yearLow", "yearHigh",
-      "dividendYield", "payoutRatio",
-    ],
-  });
+  // Fetch overview data from stockanalysis.com
+  const overview = fetchOverview(upperTicker);
+  const d = overview?.data || {};
 
-  // Fetch financial ratios
-  const ratiosResp = callFinanceTool("finance_company_ratios", {
-    ticker_symbols: [upperTicker],
-    ratio_ids: [
-      "ratio_gross_profit_margin",
-      "ratio_return_on_equity",
-      "ratio_return_on_assets",
-      "ratio_operating_margin",
-      "ratio_profit_margin",
-      "ratio_fcf_margin",
-      "ratio_debt_to_equity",
-      "ratio_current_ratio",
-      "ratio_quick_ratio",
-      "ratio_ev_to_ebitda",
-      "ratio_ev_to_revenue",
-      "ratio_peg_ratio",
-      "ratio_revenue_growth",
-      "ratio_earnings_growth",
-    ],
-  });
+  // Fetch financials for additional ratios
+  const financials = fetchFinancials(upperTicker);
+  const finData = financials?.data || {};
 
-  // Fetch financials for FCF
-  const financialsResp = callFinanceTool("finance_annual_financials", {
-    ticker_symbols: [upperTicker],
-    fields: ["freeCashFlow", "totalRevenue", "netIncome"],
-  });
+  // Get current price from Yahoo (more reliable for live price)
+  const quotes = await fetchQuotes([upperTicker]);
+  const currentPrice = quotes[0]?.price || null;
 
-  // Parse quote data
-  let currentPrice: number | null = null;
-  let pe: number | null = null;
-  let forwardPE: number | null = null;
-  let pb: number | null = null;
-  let ps: number | null = null;
-  let marketCap: number | null = null;
-  let sharesOutstanding: number | null = null;
-  let dividendYield: number | null = null;
-  let payoutRatio: number | null = null;
+  // Parse overview fields
+  const pe = safeFloat(d.peRatio);
+  const forwardPE = safeFloat(d.forwardPE);
+  const beta = safeFloat(d.beta);
+  const marketCap = parseMarketCap(d.marketCap);
+  const revenue = parseMoneyStr(d.revenue);
+  const netIncome = parseMoneyStr(d.netIncome);
+  const eps = safeFloat(d.eps);
+  const dividendYield = parseDividendYield(d.dividend);
 
-  if (quoteResp?.content) {
-    const rows = parseCSVContent(quoteResp.content);
-    const q = rows[0] || {};
-    currentPrice = safeFloat(q.price);
-    pe = safeFloat(q.pe);
-    forwardPE = safeFloat(q.forwardPE);
-    pb = safeFloat(q.priceToBook);
-    ps = safeFloat(q.priceToSales);
-    marketCap = safeFloat(q.marketCap);
-    sharesOutstanding = safeFloat(q.sharesOutstanding);
-    dividendYield = safeFloat(q.dividendYield);
-    payoutRatio = safeFloat(q.payoutRatio);
+  // Parse analyst target as fair value proxy
+  const analystTargetPrice = parseAnalystTarget(d.analystTarget?.target || d.target);
+
+  // Growth from financialChart (latest year)
+  let revenueGrowth: number | null = null;
+  let earningsGrowth: number | null = null;
+  if (Array.isArray(d.financialChart) && d.financialChart.length > 0) {
+    const latest = d.financialChart[d.financialChart.length - 1];
+    revenueGrowth = safeFloat(latest.revenueGrowth);
+    earningsGrowth = safeFloat(latest.earningsGrowth);
   }
 
-  // Parse ratios
-  let roe: number | null = null;
-  let roa: number | null = null;
+  // Compute profit margin from available data
+  let profitMargin: number | null = null;
+  if (revenue && revenue > 0 && netIncome !== null) {
+    profitMargin = (netIncome / revenue) * 100;
+  }
+
+  // Fair value: use analyst target price as proxy
+  let fairValue: number | null = analystTargetPrice;
+  let fairValueUpside: number | null = null;
+  if (fairValue && currentPrice && currentPrice > 0) {
+    fairValueUpside = ((fairValue - currentPrice) / currentPrice) * 100;
+    fairValueUpside = Math.round(fairValueUpside * 100) / 100;
+  }
+
+  // Try to extract additional ratios from financials endpoint
   let grossMargin: number | null = null;
   let operatingMargin: number | null = null;
-  let profitMargin: number | null = null;
+  let returnOnEquity: number | null = null;
+  let returnOnAssets: number | null = null;
   let debtToEquity: number | null = null;
   let currentRatioVal: number | null = null;
   let quickRatio: number | null = null;
+  let freeCashFlow: number | null = null;
   let evEbitda: number | null = null;
   let evRevenue: number | null = null;
   let pegRatio: number | null = null;
-  let revenueGrowth: number | null = null;
-  let earningsGrowth: number | null = null;
+  let pbRatio: number | null = null;
+  let psRatio: number | null = null;
+  let payoutRatio: number | null = null;
 
-  if (ratiosResp?.content) {
-    const ratioRows = parseCSVContent(ratiosResp.content);
-    const latest = ratioRows[ratioRows.length - 1] || {};
-
-    grossMargin = safeFloat(latest.ratio_gross_profit_margin || latest["Gross Profit Margin"]);
-    roe = safeFloat(latest.ratio_return_on_equity || latest["Return on Equity"]);
-    roa = safeFloat(latest.ratio_return_on_assets || latest["Return on Assets"]);
-    operatingMargin = safeFloat(latest.ratio_operating_margin || latest["Operating Margin"]);
-    profitMargin = safeFloat(latest.ratio_profit_margin || latest["Profit Margin"]);
-    debtToEquity = safeFloat(latest.ratio_debt_to_equity || latest["Debt to Equity"]);
-    currentRatioVal = safeFloat(latest.ratio_current_ratio || latest["Current Ratio"]);
-    quickRatio = safeFloat(latest.ratio_quick_ratio || latest["Quick Ratio"]);
-    evEbitda = safeFloat(latest.ratio_ev_to_ebitda || latest["EV/EBITDA"]);
-    evRevenue = safeFloat(latest.ratio_ev_to_revenue || latest["EV/Revenue"]);
-    pegRatio = safeFloat(latest.ratio_peg_ratio || latest["PEG Ratio"]);
-    revenueGrowth = safeFloat(latest.ratio_revenue_growth || latest["Revenue Growth"]);
-    earningsGrowth = safeFloat(latest.ratio_earnings_growth || latest["Earnings Growth"]);
-  }
-
-  // Parse financials for FCF
-  let freeCashFlow: number | null = null;
-  if (financialsResp?.content) {
-    const finRows = parseCSVContent(financialsResp.content);
-    const latestFin = finRows[finRows.length - 1] || {};
-    freeCashFlow = safeFloat(latestFin.freeCashFlow || latestFin["Free Cash Flow"]);
-  }
-
-  // Calculate fair value via simple DCF
-  let fairValue: number | null = null;
-  let fairValueUpside: number | null = null;
-
-  if (freeCashFlow && freeCashFlow > 0 && sharesOutstanding && sharesOutstanding > 0) {
-    const growthRate = revenueGrowth !== null ? Math.min(Math.max(revenueGrowth > 1 ? revenueGrowth / 100 : revenueGrowth, 0.02), 0.30) : 0.08;
-    const discountRate = 0.10;
-    const terminalGrowth = 0.03;
-    fairValue = calculateFairValue(freeCashFlow, growthRate, discountRate, terminalGrowth, sharesOutstanding);
-    fairValue = Math.round(fairValue * 100) / 100;
-
-    if (currentPrice && currentPrice > 0) {
-      fairValueUpside = ((fairValue - currentPrice) / currentPrice) * 100;
-      fairValueUpside = Math.round(fairValueUpside * 100) / 100;
+  // financials endpoint sometimes returns array data — extract latest row
+  if (finData && Array.isArray(finData.data)) {
+    const rows = finData.data;
+    if (rows.length > 0) {
+      const latest = rows[0]; // most recent year is typically first
+      grossMargin = safeFloat(latest.grossMargin);
+      operatingMargin = safeFloat(latest.operatingMargin);
+      freeCashFlow = safeFloat(latest.fcf || latest.freeCashFlow);
     }
   }
 
@@ -450,24 +461,24 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
     ticker: upperTicker,
     peRatio: pe,
     forwardPE,
-    pbRatio: pb,
-    psRatio: ps,
+    pbRatio: pbRatio,
+    psRatio: psRatio,
     evToEbitda: evEbitda,
     evToRevenue: evRevenue,
     pegRatio,
-    returnOnEquity: roe,
-    returnOnAssets: roa,
-    grossMargin,
-    operatingMargin,
+    returnOnEquity: returnOnEquity,
+    returnOnAssets: returnOnAssets,
+    grossMargin: grossMargin,
+    operatingMargin: operatingMargin,
     profitMargin,
     revenueGrowth,
     earningsGrowth,
-    debtToEquity,
+    debtToEquity: debtToEquity,
     currentRatio: currentRatioVal,
-    quickRatio,
-    freeCashFlow,
+    quickRatio: quickRatio,
+    freeCashFlow: freeCashFlow,
     dividendYield,
-    payoutRatio,
+    payoutRatio: payoutRatio,
     fairValue,
     fairValueUpside,
     currentPrice,
@@ -486,7 +497,7 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
   // Cache the result
   setCachedFundamentals(upperTicker, result);
 
-  console.log(`[fundamentals] ${upperTicker}: Score=${fundamentalScore} Grade=${fundamentalGrade}`);
+  console.log(`[fundamentals] ${upperTicker}: Score=${fundamentalScore} Grade=${fundamentalGrade} (P/E=${pe}, FwdPE=${forwardPE}, ProfitMargin=${profitMargin?.toFixed(1)}%, RevGrowth=${revenueGrowth}, FairValue=${fairValue})`);
   return result;
 }
 
@@ -508,7 +519,7 @@ export async function fetchFundamentalsBatch(tickers: string[]): Promise<Map<str
     }
   }
 
-  // Fetch remaining, max 20 at a time with delays
+  // Fetch remaining with delays
   for (let i = 0; i < toFetch.length; i++) {
     try {
       const data = await fetchFundamentals(toFetch[i]);
