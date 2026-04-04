@@ -1,4 +1,4 @@
-import { fetchQuotes, fetchOHLCV, fetchCompanyRatios } from "./market-data-provider";
+import { fetchQuotes, fetchOHLCV, fetchCompanyRatios, type CompanyRatios } from "./market-data-provider";
 
 interface AutoSignals {
   momentum: number;
@@ -106,7 +106,7 @@ function computeMeanReversion(
   };
 }
 
-function computeQuality(ratios: Record<string, number>): { score: number; data: any } {
+function computeQuality(ratios: CompanyRatios): { score: number; data: any } {
   let total = 0;
 
   const gm = ratios.grossMargin || 0;
