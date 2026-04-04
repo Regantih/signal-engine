@@ -37,12 +37,48 @@ interface QuoteResponse {
   date: string | null;
 }
 
+interface FundamentalData {
+  ticker: string;
+  peRatio: number | null;
+  forwardPE: number | null;
+  pbRatio: number | null;
+  evToEbitda: number | null;
+  returnOnEquity: number | null;
+  returnOnAssets: number | null;
+  grossMargin: number | null;
+  profitMargin: number | null;
+  debtToEquity: number | null;
+  currentRatio: number | null;
+  revenueGrowth: number | null;
+  earningsGrowth: number | null;
+  fairValue: number | null;
+  fairValueUpside: number | null;
+  fundamentalScore: number;
+  fundamentalGrade: string;
+  currentPrice: number | null;
+  fetchedAt: string;
+}
+
+const GRADE_COLORS: Record<string, string> = {
+  A: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
+  B: "bg-teal-500/15 text-teal-600 border-teal-500/30",
+  C: "bg-yellow-500/15 text-yellow-600 border-yellow-500/30",
+  D: "bg-orange-500/15 text-orange-600 border-orange-500/30",
+  F: "bg-red-500/15 text-red-600 border-red-500/30",
+};
+
 function MarketCard({ opp }: { opp: Opportunity }) {
   const { data: quote } = useQuery<QuoteResponse>({
     queryKey: ["/api/market-data", opp.ticker, "quote"],
     queryFn: async () => { const res = await apiRequest("GET", `/api/market-data/${opp.ticker}/quote`); return res.json(); },
     enabled: !!opp.ticker,
     refetchInterval: 30000,
+  });
+
+  const { data: fundamentals } = useQuery<FundamentalData>({
+    queryKey: ["/api/fundamentals", opp.ticker],
+    queryFn: async () => { const res = await apiRequest("GET", `/api/fundamentals/${opp.ticker}`); return res.json(); },
+    enabled: !!opp.ticker,
   });
 
   const currentPrice = quote?.price ?? opp.entryPrice;
@@ -118,6 +154,57 @@ function MarketCard({ opp }: { opp: Opportunity }) {
           </div>
         )}
       </div>
+
+      {/* Fundamental Analysis */}
+      {fundamentals && (
+        <div className="px-4 pb-2">
+          <div className="border-t border-border/50 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Fundamental Analysis</span>
+              <span className={`inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-bold border ${GRADE_COLORS[fundamentals.fundamentalGrade] || "bg-muted text-muted-foreground"}`}>
+                {fundamentals.fundamentalGrade}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+              {[
+                { label: "P/E", value: fundamentals.peRatio?.toFixed(1) },
+                { label: "ROE", value: fundamentals.returnOnEquity != null ? `${(Math.abs(fundamentals.returnOnEquity) > 1 ? fundamentals.returnOnEquity : fundamentals.returnOnEquity * 100).toFixed(1)}%` : null },
+                { label: "D/E", value: fundamentals.debtToEquity?.toFixed(2) },
+                { label: "Fair Val", value: fundamentals.fairValue ? `$${fundamentals.fairValue.toFixed(0)}` : null },
+                { label: "Upside", value: fundamentals.fairValueUpside != null ? `${fundamentals.fairValueUpside > 0 ? "+" : ""}${fundamentals.fairValueUpside.toFixed(1)}%` : null },
+                { label: "Score", value: `${fundamentals.fundamentalScore}/100` },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground/70">{label}</span>
+                  <span className={`text-[10px] font-mono tabular-nums ${
+                    label === "Upside" && fundamentals.fairValueUpside != null
+                      ? fundamentals.fairValueUpside >= 0 ? "text-emerald-500" : "text-red-500"
+                      : "text-muted-foreground"
+                  }`}>
+                    {value ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Finbox Charts */}
+      {opp.ticker && (
+        <div className="px-2 pb-2">
+          <iframe
+            src={`https://finbox.com/NASDAQGS:${opp.ticker}/charts/`}
+            width="100%"
+            height="300"
+            frameBorder="0"
+            style={{ border: "none", borderRadius: "8px" }}
+            title={`Finbox charts for ${opp.ticker}`}
+            loading="lazy"
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
+        </div>
+      )}
 
       {/* Signal Summary */}
       <div className="px-4 pb-4">

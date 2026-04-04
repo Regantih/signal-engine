@@ -58,6 +58,20 @@ interface Opportunity {
   crowding: number;
 }
 
+interface FundamentalData {
+  ticker: string;
+  fundamentalScore: number;
+  fundamentalGrade: string;
+}
+
+const GRADE_COLORS: Record<string, string> = {
+  A: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
+  B: "bg-teal-500/15 text-teal-600 border-teal-500/30",
+  C: "bg-yellow-500/15 text-yellow-600 border-yellow-500/30",
+  D: "bg-orange-500/15 text-orange-600 border-orange-500/30",
+  F: "bg-red-500/15 text-red-600 border-red-500/30",
+};
+
 const DOMAIN_LABELS: Record<string, string> = {
   public_markets: "Public Markets",
   vc_themes: "VC Themes",
@@ -170,6 +184,22 @@ export default function Dashboard() {
   const { data: opportunities, isLoading: oppsLoading } = useQuery<Opportunity[]>({
     queryKey: ["/api/opportunities"],
   });
+
+  // Fetch fundamentals for tickers that have them
+  const tickers = opportunities?.filter(o => o.ticker).map(o => o.ticker!).filter(Boolean) || [];
+  const fundamentalsMap = new Map<string, FundamentalData>();
+
+  const { data: fundamentalsData } = useQuery<Record<string, FundamentalData>>({
+    queryKey: ["/api/fundamentals/batch", tickers.join(",")],
+    queryFn: async () => { const res = await apiRequest("POST", "/api/fundamentals/batch", { tickers }); return res.json(); },
+    enabled: tickers.length > 0,
+  });
+
+  if (fundamentalsData) {
+    Object.entries(fundamentalsData).forEach(([k, v]) => {
+      fundamentalsMap.set(k.toUpperCase(), v as FundamentalData);
+    });
+  }
 
   const topOpps = opportunities
     ?.filter((o) => o.compositeScore !== null)
@@ -372,6 +402,7 @@ export default function Dashboard() {
                   <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Target</th>
                   <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Stop</th>
                   <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Action</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Grade</th>
                 </tr>
               </thead>
               <tbody>
@@ -411,6 +442,18 @@ export default function Dashboard() {
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <ActionBadge action={opp.status.toUpperCase()} />
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {(() => {
+                        const f = opp.ticker ? fundamentalsMap.get(opp.ticker.toUpperCase()) : null;
+                        if (!f) return <span className="text-xs text-muted-foreground/40">—</span>;
+                        const grade = f.fundamentalGrade;
+                        return (
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold border ${GRADE_COLORS[grade] || "bg-muted text-muted-foreground"}`}>
+                            {grade}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

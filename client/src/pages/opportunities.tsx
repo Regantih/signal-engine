@@ -12,7 +12,7 @@ import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
 import { SignalBar } from "@/components/signal-bar";
 import { SIGNAL_DESCRIPTIONS, scoreLocally, DEFAULT_WEIGHTS } from "@/lib/scoring";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap, ExternalLink } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -583,7 +583,7 @@ export default function Opportunities() {
                           </div>
                         ))}
                       </div>
-                      <div className="pt-2 flex gap-2">
+                      <div className="pt-2 flex gap-2 flex-wrap">
                         {opp.ticker && opp.domain === "public_markets" && (
                           <Button
                             variant="outline"
@@ -599,6 +599,19 @@ export default function Opportunities() {
                             <Zap className="w-3 h-3 mr-1" />
                             Auto-Score
                           </Button>
+                        )}
+                        {opp.ticker && (
+                          <a
+                            href={`https://finbox.com/NASDAQGS:${opp.ticker}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+                            data-testid={`link-fundamentals-${opp.id}`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View Fundamentals
+                          </a>
                         )}
                         <Button
                           variant="destructive"

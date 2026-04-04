@@ -16,6 +16,7 @@ import { runDailyPipeline, computeCapitalState, getCostMetrics, resetCostMetrics
 import { requireAuth, generateToken, validatePassword, isPasswordSet } from "./auth";
 import { captureCredentials } from "./credentials";
 import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
+import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysis";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -877,6 +878,21 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         return res.status(400).json({ error: `Could not compute signals for ${ticker}. Finance data unavailable.` });
       }
 
+      // Enhance quality signal with fundamental analysis
+      try {
+        const fundamentals = await fetchFundamentals(ticker);
+        if (fundamentals.fundamentalScore > 70) {
+          signals.quality = Math.min(100, Math.max(signals.quality, Math.round(70 + fundamentals.fundamentalScore * 0.2)));
+        } else if (fundamentals.fundamentalScore >= 50) {
+          signals.quality = Math.round(signals.quality * 0.4 + (55 + fundamentals.fundamentalScore * 0.2) * 0.6);
+        } else {
+          signals.quality = Math.round(signals.quality * 0.4 + (25 + fundamentals.fundamentalScore * 0.3) * 0.6);
+        }
+        signals.quality = Math.max(0, Math.min(100, signals.quality));
+      } catch (e: any) {
+        console.log(`[auto-score] Fundamental enhancement skipped for ${ticker}:`, e.message?.slice(0, 100));
+      }
+
       // Find matching opportunity and update
       const opps = await storage.getOpportunities();
       const opp = opps.find(o => o.ticker?.toUpperCase() === ticker);
@@ -1072,6 +1088,19 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           const ticker = opp.ticker!.toUpperCase();
           const signals = await computeAutoSignals(ticker);
           if (signals) {
+            // Enhance quality signal with fundamental analysis
+            try {
+              const fundamentals = await fetchFundamentals(ticker);
+              if (fundamentals.fundamentalScore > 70) {
+                signals.quality = Math.min(100, Math.max(signals.quality, Math.round(70 + fundamentals.fundamentalScore * 0.2)));
+              } else if (fundamentals.fundamentalScore >= 50) {
+                signals.quality = Math.round(signals.quality * 0.4 + (55 + fundamentals.fundamentalScore * 0.2) * 0.6);
+              } else {
+                signals.quality = Math.round(signals.quality * 0.4 + (25 + fundamentals.fundamentalScore * 0.3) * 0.6);
+              }
+              signals.quality = Math.max(0, Math.min(100, signals.quality));
+            } catch { /* skip fundamental enhancement if unavailable */ }
+
             results.push({
               ticker,
               signals: {
@@ -1973,6 +2002,41 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   app.post("/api/realtime/stop", (_req, res) => {
     stopRealtime();
     res.json({ stopped: true });
+  });
+
+  // ========================
+  // FUNDAMENTAL ANALYSIS
+  // ========================
+
+  // GET /api/fundamentals/:ticker — Get fundamental analysis for a ticker
+  app.get("/api/fundamentals/:ticker", async (req, res) => {
+    try {
+      const { ticker } = req.params;
+      if (!ticker || ticker.length > 10) {
+        return res.status(400).json({ error: "Invalid ticker" });
+      }
+      const data = await fetchFundamentals(ticker);
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/fundamentals/batch — Get fundamentals for multiple tickers
+  app.post("/api/fundamentals/batch", async (req, res) => {
+    try {
+      const { tickers } = req.body;
+      if (!Array.isArray(tickers) || tickers.length === 0) {
+        return res.status(400).json({ error: "tickers array required" });
+      }
+      const limited = tickers.slice(0, 20);
+      const results = await fetchFundamentalsBatch(limited);
+      const obj: Record<string, any> = {};
+      results.forEach((v, k) => { obj[k] = v; });
+      res.json(obj);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   return httpServer;
