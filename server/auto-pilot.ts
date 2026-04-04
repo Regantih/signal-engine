@@ -184,7 +184,7 @@ async function runAutopilot(): Promise<void> {
 
     console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
 
-    // Auto-execute paper trades for HIGH conviction opportunities (when Alpaca not connected)
+    // Auto-execute paper trades for HIGH conviction opportunities (simulated, no real money)
     try {
       const alpacaConnected = await isAlpacaConnected();
       if (!alpacaConnected) {
@@ -204,7 +204,7 @@ async function runAutopilot(): Promise<void> {
 
         let paperTraded = 0;
         for (const opp of highConviction) {
-          if (positionTickers.has(opp.ticker!.toUpperCase())) continue; // Already have position
+          if (positionTickers.has(opp.ticker!.toUpperCase())) continue;
 
           const shares = opp.suggestedAllocation! / opp.entryPrice!;
           if (shares <= 0) continue;
