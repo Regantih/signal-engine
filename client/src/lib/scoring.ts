@@ -138,6 +138,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "Trend strength and directional persistence",
     domain: {
       public_markets: "20-day price trend, earnings drift, sector rotation",
+      crypto: "7-day price change, 24h trend, volume-weighted momentum",
+      etf: "20-day & 50-day return, volume trend ratio, sector rotation",
       vc_themes: "Funding velocity, deal pace acceleration, talent migration",
       content_brand: "Topic growth rate, engagement trend, follower acceleration",
       side_business: "Demand growth, market expansion velocity, repeat purchase rate",
@@ -148,6 +150,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "Deviation from fair value — oversold or overbought",
     domain: {
       public_markets: "Price vs. 200-day MA, PE ratio vs. 5-yr avg, RSI extremes",
+      crypto: "Price vs 30-day average, ATH distance, oversold/overbought zones",
+      etf: "Deviation from 50-day SMA, RSI extremes, 52-week range position",
       vc_themes: "Sector correction depth, post-hype normalization, valuation reset",
       content_brand: "Engagement pullback, topic fatigue level, audience saturation",
       side_business: "Market correction opportunity, competitor exit, pricing gap",
@@ -158,6 +162,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "Fundamental strength and competitive moat",
     domain: {
       public_markets: "ROE, gross margins, revenue quality, management track record",
+      crypto: "Market cap rank, network maturity, ecosystem development",
+      etf: "Expense ratio, AUM size, category quality, fund structure",
       vc_themes: "Team strength, technology moat, enterprise urgency, unit economics",
       content_brand: "Content depth, audience loyalty, monetization path clarity",
       side_business: "Margin potential, defensibility, operational complexity",
@@ -168,6 +174,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "Capital and attention flows",
     domain: {
       public_markets: "Institutional buying, ETF flows, dark pool activity, volume",
+      crypto: "24h volume/market cap ratio, market cap change, exchange flows",
+      etf: "Volume surge ratio vs 20-day average, fund flow trends",
       vc_themes: "LP commitments, corporate venture interest, cloud cost decline",
       content_brand: "Network overlap, sharing velocity, cross-platform reach",
       side_business: "Customer acquisition cost trend, referral rate, channel strength",
@@ -178,6 +186,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "Downside exposure and volatility",
     domain: {
       public_markets: "Volatility regime, beta, max drawdown, liquidity risk",
+      crypto: "24h price range, 30-day volatility, inherent crypto risk premium",
+      etf: "Annualized volatility, max drawdown, distance to 52-week low",
       vc_themes: "Regulatory risk, technology risk, market timing, capital intensity",
       content_brand: "Platform dependency, topic controversy, algorithm risk",
       side_business: "Execution complexity, capital requirements, competitive threat",
@@ -188,6 +198,8 @@ export const SIGNAL_DESCRIPTIONS: Record<string, { label: string; description: s
     description: "How many others are pursuing the same opportunity",
     domain: {
       public_markets: "Short interest, hedge fund concentration, retail sentiment",
+      crypto: "Market cap dominance, social media hype, meme coin premium",
+      etf: "Fund AUM concentration, retail popularity, trade volume crowding",
       vc_themes: "Number of funded competitors, hype cycle position, FOMO indicator",
       content_brand: "Creator saturation, topic oversaturation, copycat density",
       side_business: "Competitor density, barrier to entry, market maturity",

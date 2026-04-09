@@ -1,6 +1,8 @@
 import { storage } from "./storage";
 import { scanUniverse, addScannedOpportunity } from "./universe-scanner";
 import { computeAutoSignals } from "./auto-signals";
+import { computeCryptoSignals, CRYPTO_TICKERS } from "./crypto-signals";
+import { computeETFSignals, ETF_TICKERS } from "./etf-signals";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position } from "./risk-manager";
 import { fetchMacroSnapshot } from "./macro-monitor";
@@ -125,6 +127,110 @@ export async function computeCapitalState(): Promise<CapitalState> {
     totalValue: Math.round((cashAvailable + deployed + unrealizedPnl) * 100) / 100,
     positions,
   };
+}
+
+// Score a list of tickers for a given domain, creating opportunities if they don't exist
+async function scoreDomainAssets(
+  domain: string,
+  tickers: string[],
+  computeSignals: (ticker: string) => Promise<{ momentum: number; meanReversion: number; quality: number; flow: number; risk: number; crowding: number; metadata: { ticker: string; price: number; computedAt: string; dataPoints: Record<string, any> } } | null>,
+  macroRegime: string,
+  macroAdjustment: number,
+  pending: Array<{ type: "BUY" | "SELL"; ticker: string; reason: string; allocation?: number; opportunityId: number }>,
+): Promise<number> {
+  let scored = 0;
+  const opps = await storage.getOpportunities();
+
+  for (const ticker of tickers) {
+    try {
+      const signals = await computeSignals(ticker);
+      if (!signals) continue;
+
+      const now = new Date().toISOString();
+
+      // Find or create opportunity
+      let opp = opps.find(o => o.ticker?.toUpperCase() === ticker.toUpperCase() && o.domain === domain);
+      if (!opp) {
+        const created = await storage.createOpportunity({
+          name: `${ticker} (${domain})`,
+          ticker: ticker.toUpperCase(),
+          domain,
+          description: `Auto-discovered ${domain} asset`,
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+          entryPrice: signals.metadata.price,
+          targetPrice: null,
+          stopLoss: null,
+          status: "watch",
+          screenerFlags: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        opp = created;
+      } else {
+        await storage.updateOpportunity(opp.id, {
+          momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality,
+          flow: signals.flow, risk: signals.risk, crowding: signals.crowding,
+          entryPrice: signals.metadata.price, updatedAt: now,
+        });
+      }
+
+      const weights = await storage.getWeights(domain) || {
+        momentum: 0.20, meanReversion: 0.15, quality: 0.25, flow: 0.15, risk: 0.15, crowding: 0.10,
+      };
+      const portfolio = await storage.getPortfolio();
+      const budget = portfolio?.cashRemaining || 100;
+
+      const result = scoreOpportunity(
+        { momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality, flow: signals.flow, risk: signals.risk, crowding: signals.crowding },
+        { momentum: weights.momentum, meanReversion: weights.meanReversion, quality: weights.quality, flow: weights.flow, risk: weights.risk, crowding: weights.crowding },
+        budget
+      );
+
+      const adjustedAllocation = Math.round(result.suggestedAllocation * macroAdjustment * 100) / 100;
+      const action = suggestAction(result);
+      const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+      await storage.updateOpportunity(opp.id, {
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: adjustedAllocation,
+        targetPrice: priceLevels.targetPrice, stopLoss: priceLevels.stopLoss,
+        status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+        updatedAt: now,
+      });
+
+      await storage.createPrediction({
+        opportunityId: opp.id, action,
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: adjustedAllocation,
+        entryPrice: signals.metadata.price, targetPrice: priceLevels.targetPrice,
+        stopLoss: priceLevels.stopLoss, currentPrice: signals.metadata.price,
+        reasoning: `Pipeline auto-scored ${domain} [${macroRegime}/${macroAdjustment}x]: Mom=${signals.momentum} Qual=${signals.quality} Flow=${signals.flow}`,
+        signalSnapshot: JSON.stringify({ ...signals, macroRegime, macroAdjustment }),
+        timestamp: now,
+      });
+
+      scored++;
+      trackCost(1);
+
+      if (action === "BUY" && adjustedAllocation > 0 && opp.status !== "buy") {
+        pending.push({
+          type: "BUY", ticker: ticker.toUpperCase(),
+          reason: `[${domain}] Score ${result.compositeScore.toFixed(3)}, P(success) ${(result.probabilityOfSuccess * 100).toFixed(1)}%, allocation $${adjustedAllocation}`,
+          allocation: adjustedAllocation, opportunityId: opp.id,
+        });
+      }
+    } catch (e: any) {
+      console.error(`[pipeline] ${domain} score failed for ${ticker}:`, e.message);
+    }
+  }
+  return scored;
 }
 
 // The full daily pipeline
@@ -252,6 +358,14 @@ export async function runDailyPipeline(): Promise<PipelineResult> {
       }
     } catch (e: any) { console.error(`Score failed for ${opp.ticker}:`, e.message); }
   }
+
+  // Phase 4b: Auto-score crypto assets
+  console.log("[pipeline] Phase 4b: Scoring crypto assets...");
+  scoredCount += await scoreDomainAssets("crypto", CRYPTO_TICKERS, (t) => computeCryptoSignals(t), macroRegime, macroAdjustment, pending);
+
+  // Phase 4c: Auto-score ETF assets
+  console.log("[pipeline] Phase 4c: Scoring ETF assets...");
+  scoredCount += await scoreDomainAssets("etf", ETF_TICKERS, (t) => computeETFSignals(t), macroRegime, macroAdjustment, pending);
 
   // Phase 5: Resolve old predictions (accountability ledger)
   console.log("[pipeline] Phase 5: Resolving predictions...");

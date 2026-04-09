@@ -77,11 +77,29 @@ const GRADE_COLORS: Record<string, string> = {
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
-  public_markets: "Public Markets",
+  public_markets: "Equities",
+  crypto: "Crypto",
+  etf: "ETFs",
   vc_themes: "VC Themes",
   content_brand: "Content / Brand",
   side_business: "Side Business",
 };
+
+const DOMAIN_COLORS: Record<string, string> = {
+  public_markets: "bg-blue-500/70",
+  crypto: "bg-orange-500/70",
+  etf: "bg-violet-500/70",
+  vc_themes: "bg-teal-500/70",
+  content_brand: "bg-pink-500/70",
+  side_business: "bg-amber-500/70",
+};
+
+const DOMAIN_FILTER_TABS = [
+  { key: "all", label: "All" },
+  { key: "public_markets", label: "Equities" },
+  { key: "crypto", label: "Crypto" },
+  { key: "etf", label: "ETFs" },
+];
 
 function TradingViewIntegration() {
   const webhookUrl = `${window.location.origin}/api/webhooks/tradingview`;
@@ -205,10 +223,16 @@ export default function Dashboard() {
     });
   }
 
-  const topOpps = opportunities
+  const [domainFilter, setDomainFilter] = useState<string>("all");
+
+  const filteredOpps = opportunities?.filter(
+    (o) => domainFilter === "all" || o.domain === domainFilter
+  );
+
+  const topOpps = filteredOpps
     ?.filter((o) => o.compositeScore !== null)
     .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0))
-    .slice(0, 5);
+    .slice(0, 8);
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
@@ -327,24 +351,28 @@ export default function Dashboard() {
         <div className="bg-card border border-card-border rounded-lg p-4">
           <h3 className="text-sm font-medium mb-3">By Domain</h3>
           <div className="space-y-2">
-            {Object.entries(stats?.byDomain || {}).map(([domain, count]) => (
-              <div key={domain} className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {DOMAIN_LABELS[domain] || domain}
-                </span>
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary/70 rounded-full"
-                      style={{
-                        width: `${Math.min(100, ((count as number) / (stats?.totalOpportunities || 1)) * 100)}%`,
-                      }}
-                    />
+            {["public_markets", "crypto", "etf", "vc_themes", "content_brand", "side_business"].map((domain) => {
+              const count = (stats?.byDomain?.[domain] || 0) as number;
+              if (count === 0) return null;
+              return (
+                <div key={domain} className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    {DOMAIN_LABELS[domain] || domain}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${DOMAIN_COLORS[domain] || "bg-primary/70"}`}
+                        style={{
+                          width: `${Math.min(100, (count / (stats?.totalOpportunities || 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs tabular-nums font-mono w-6 text-right">{count}</span>
                   </div>
-                  <span className="text-xs tabular-nums font-mono w-6 text-right">{count as number}</span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {Object.keys(stats?.byDomain || {}).length === 0 && (
               <p className="text-xs text-muted-foreground/60">No opportunities yet</p>
             )}
@@ -386,11 +414,36 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Domain Filter Tabs */}
+      <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg w-fit" data-testid="domain-filter-tabs">
+        {DOMAIN_FILTER_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setDomainFilter(tab.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              domainFilter === tab.key
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`filter-tab-${tab.key}`}
+          >
+            {tab.label}
+            {tab.key !== "all" && stats?.byDomain?.[tab.key] ? (
+              <span className="ml-1.5 text-[10px] tabular-nums opacity-60">
+                {stats.byDomain[tab.key]}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
       {/* Top Ranked Opportunities */}
       <div className="bg-card border border-card-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium">Top Ranked Opportunities</h3>
-          <span className="text-xs text-muted-foreground">Sorted by composite score</span>
+          <span className="text-xs text-muted-foreground">
+            {domainFilter === "all" ? "All domains" : DOMAIN_LABELS[domainFilter]} · Sorted by composite score
+          </span>
         </div>
 
         {topOpps && topOpps.length > 0 ? (

@@ -52,7 +52,9 @@ const SCREENER_COLORS: Record<string, string> = {
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
-  public_markets: "Public Markets",
+  public_markets: "Equities",
+  crypto: "Crypto",
+  etf: "ETFs",
   vc_themes: "VC Themes",
   content_brand: "Content / Brand",
   side_business: "Side Business",
@@ -279,7 +281,9 @@ export default function Opportunities() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="public_markets">Public Markets</SelectItem>
+                        <SelectItem value="public_markets">Equities</SelectItem>
+                        <SelectItem value="crypto">Crypto</SelectItem>
+                        <SelectItem value="etf">ETFs</SelectItem>
                         <SelectItem value="vc_themes">VC Themes</SelectItem>
                         <SelectItem value="content_brand">Content / Brand</SelectItem>
                         <SelectItem value="side_business">Side Business</SelectItem>
@@ -393,7 +397,9 @@ export default function Opportunities() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Domains</SelectItem>
-            <SelectItem value="public_markets">Public Markets</SelectItem>
+            <SelectItem value="public_markets">Equities</SelectItem>
+            <SelectItem value="crypto">Crypto</SelectItem>
+            <SelectItem value="etf">ETFs</SelectItem>
             <SelectItem value="vc_themes">VC Themes</SelectItem>
             <SelectItem value="content_brand">Content / Brand</SelectItem>
             <SelectItem value="side_business">Side Business</SelectItem>
@@ -585,7 +591,7 @@ export default function Opportunities() {
                         ))}
                       </div>
                       <div className="pt-2 flex gap-2 flex-wrap">
-                        {opp.ticker && opp.domain === "public_markets" && (
+                        {opp.ticker && ["public_markets", "crypto", "etf"].includes(opp.domain) && (
                           <Button
                             variant="outline"
                             size="sm"

@@ -3,11 +3,13 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Domain types for cross-domain scoring
-export const DOMAINS = ["public_markets", "vc_themes", "content_brand", "side_business"] as const;
+export const DOMAINS = ["public_markets", "crypto", "etf", "vc_themes", "content_brand", "side_business"] as const;
 export type Domain = typeof DOMAINS[number];
 
 export const DOMAIN_LABELS: Record<Domain, string> = {
   public_markets: "Public Markets",
+  crypto: "Crypto",
+  etf: "ETFs",
   vc_themes: "VC Themes",
   content_brand: "Content / Brand",
   side_business: "Side Business",
