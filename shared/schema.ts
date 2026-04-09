@@ -209,6 +209,20 @@ export const notifications = sqliteTable("notifications", {
   createdAt: text("created_at").notNull(),
 });
 
+// Strategies table for leaderboard
+export const strategies = sqliteTable("strategies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  sharpeRatio: real("sharpe_ratio"),
+  totalReturn: real("total_return"),
+  maxDrawdown: real("max_drawdown"),
+  winRate: real("win_rate"),
+  tradeCount: integer("trade_count"),
+  updatedAt: text("updated_at").notNull(),
+  isPublic: integer("is_public").default(1),
+});
+
 // App settings (key-value store for API keys etc)
 export const appSettings = sqliteTable("app_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -251,6 +265,7 @@ export const insertMarketDataSchema = createInsertSchema(marketData).omit({ id: 
 export const insertWebhookAlertSchema = createInsertSchema(webhookAlerts).omit({ id: true });
 export const insertPublishedPredictionSchema = createInsertSchema(publishedPredictions).omit({ id: true });
 export const insertBenzingaNewsSchema = createInsertSchema(benzingaNews).omit({ id: true });
+export const insertStrategySchema = createInsertSchema(strategies).omit({ id: true });
 export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true });
 export const insertPaperPositionSchema = createInsertSchema(paperPositions).omit({ id: true });
 export const insertPaperOrderSchema = createInsertSchema(paperOrders).omit({ id: true });
@@ -276,6 +291,8 @@ export type PublishedPrediction = typeof publishedPredictions.$inferSelect;
 export type InsertPublishedPrediction = z.infer<typeof insertPublishedPredictionSchema>;
 export type BenzingaNews = typeof benzingaNews.$inferSelect;
 export type InsertBenzingaNews = z.infer<typeof insertBenzingaNewsSchema>;
+export type Strategy = typeof strategies.$inferSelect;
+export type InsertStrategy = z.infer<typeof insertStrategySchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
 export type PaperPosition = typeof paperPositions.$inferSelect;

@@ -2239,7 +2239,17 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         return res.status(429).json({ error: "Pipeline can only run once every 5 minutes" });
       }
       const result = await runDailyPipeline();
-      res.json(result);
+
+      // Run daily digest as part of pipeline (once per day at 8am)
+      let digestResult = null;
+      try {
+        const { runDigestIfNeeded } = await import("./daily-digest");
+        digestResult = await runDigestIfNeeded();
+      } catch (e) {
+        console.error("[pipeline] Digest generation failed:", e);
+      }
+
+      res.json({ ...result, digest: digestResult });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -2480,6 +2490,81 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     try {
       await storage.removeWatchlistItem(Number(req.params.itemId));
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // STRATEGIES (LEADERBOARD)
+  // ========================
+
+  app.get("/api/strategies", async (_req, res) => {
+    try {
+      const list = await storage.getStrategies();
+      res.json(list);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/strategies", async (req, res) => {
+    try {
+      const { name, description, sharpeRatio, totalReturn, maxDrawdown, winRate, tradeCount } = req.body;
+      if (!name) return res.status(400).json({ error: "name required" });
+      const strategy = await storage.createStrategy({
+        name,
+        description: description || null,
+        sharpeRatio: sharpeRatio ?? null,
+        totalReturn: totalReturn ?? null,
+        maxDrawdown: maxDrawdown ?? null,
+        winRate: winRate ?? null,
+        tradeCount: tradeCount ?? null,
+        updatedAt: new Date().toISOString(),
+        isPublic: 1,
+      });
+      res.json(strategy);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // DAILY DIGEST
+  // ========================
+
+  app.get("/api/digest/preview", async (_req, res) => {
+    try {
+      const digestSetting = await storage.getSetting("last_digest");
+      if (digestSetting?.value) {
+        res.json(JSON.parse(digestSetting.value));
+      } else {
+        // Generate a fresh preview
+        const { generateDailyDigest } = await import("./daily-digest");
+        const digest = await generateDailyDigest();
+        res.json(digest);
+      }
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/digest/generate", async (_req, res) => {
+    try {
+      const { generateDailyDigest } = await import("./daily-digest");
+      const digest = await generateDailyDigest();
+      // Store for preview
+      await storage.upsertSetting("last_digest", JSON.stringify(digest));
+      // Create notification
+      await storage.createNotification({
+        type: "daily_summary",
+        title: `Daily Digest — ${digest.date}`,
+        message: digest.summary,
+        ticker: null,
+        read: 0,
+        createdAt: new Date().toISOString(),
+      });
+      res.json(digest);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

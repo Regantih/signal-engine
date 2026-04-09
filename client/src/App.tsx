@@ -25,6 +25,7 @@ import Trading from "@/pages/trading";
 import Macro from "@/pages/macro";
 import Accountability from "@/pages/accountability";
 import Landing from "@/pages/landing";
+import Leaderboard from "@/pages/leaderboard";
 
 function AppRouter() {
   return (
@@ -41,6 +42,7 @@ function AppRouter() {
       <Route path="/weights" component={Weights} />
       <Route path="/market" component={Market} />
       <Route path="/news" component={News} />
+      <Route path="/leaderboard" component={Leaderboard} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/score/:ticker" component={Landing} />
       <Route component={NotFound} />

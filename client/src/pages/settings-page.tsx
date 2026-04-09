@@ -14,6 +14,8 @@ import {
   Wallet,
   XCircle,
   RefreshCw,
+  Mail,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +30,133 @@ interface AlpacaStatus {
     portfolioValue: string;
   };
   error?: string;
+}
+
+interface DigestData {
+  date: string;
+  buySignalCount: number;
+  portfolioPnl: number;
+  portfolioPnlPercent: number;
+  topPicks: Array<{
+    name: string;
+    ticker: string | null;
+    compositeScore: number;
+    probabilityOfSuccess: number;
+    suggestedAllocation: number;
+    convictionBand: string;
+  }>;
+  sellSignals: Array<{
+    name: string;
+    ticker: string | null;
+    reason: string;
+  }>;
+  marketRegime: string;
+  summary: string;
+}
+
+function DigestPreview() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: digest, isLoading } = useQuery<DigestData>({
+    queryKey: ["/api/digest/preview"],
+    retry: false,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/digest/generate");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/digest/preview"] });
+      qc.invalidateQueries({ queryKey: ["/api/notifications"] });
+      qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      toast({ title: "Digest generated", description: "Daily digest created and notification sent." });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "Digest failed", description: e.message });
+    },
+  });
+
+  return (
+    <div className="bg-card border border-card-border rounded-lg overflow-hidden" data-testid="digest-preview">
+      <div className="p-4 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-md bg-cyan-500/10 flex items-center justify-center">
+              <Mail className="w-4 h-4 text-cyan-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">Daily Digest</h3>
+              <p className="text-xs text-muted-foreground">Daily 8am summary of portfolio, picks & market</p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending}
+            data-testid="button-generate-digest"
+          >
+            {generateMutation.isPending ? (
+              <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />
+            ) : (
+              <Send className="w-3 h-3 mr-1.5" />
+            )}
+            Generate Now
+          </Button>
+        </div>
+      </div>
+
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">
+            <div className="h-4 bg-muted rounded w-3/4 animate-pulse" />
+            <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
+          </div>
+        ) : digest ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-muted-foreground">Date: <span className="text-foreground font-medium">{digest.date}</span></span>
+              <span className="text-muted-foreground">BUY Signals: <span className="text-emerald-400 font-medium">{digest.buySignalCount}</span></span>
+              <span className="text-muted-foreground">Regime: <span className={`font-medium ${
+                digest.marketRegime === "CRISIS" ? "text-red-400" :
+                digest.marketRegime === "OPPORTUNITY" ? "text-emerald-400" :
+                "text-amber-400"
+              }`}>{digest.marketRegime}</span></span>
+            </div>
+
+            <div className={`text-sm font-semibold ${digest.portfolioPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              P&L: {digest.portfolioPnl >= 0 ? "+" : ""}${digest.portfolioPnl.toFixed(2)} ({digest.portfolioPnlPercent >= 0 ? "+" : ""}{digest.portfolioPnlPercent.toFixed(2)}%)
+            </div>
+
+            {digest.topPicks.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Top Picks</p>
+                <div className="space-y-1">
+                  {digest.topPicks.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span>
+                        <span className="text-muted-foreground/50 mr-1">{i + 1}.</span>
+                        <span className="font-medium">{p.name}</span>
+                        {p.ticker && <span className="text-muted-foreground ml-1">({p.ticker})</span>}
+                      </span>
+                      <span className="font-mono tabular-nums text-emerald-400">{(p.probabilityOfSuccess * 100).toFixed(0)}% | ${p.suggestedAllocation.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground/70 italic">{digest.summary}</p>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No digest generated yet. Click "Generate Now" to create one.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function SettingsPage() {
@@ -270,6 +399,9 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+
+      {/* Daily Digest Preview */}
+      <DigestPreview />
 
       {/* Future integrations */}
       <div className="bg-card border border-card-border rounded-lg p-4 opacity-60">
