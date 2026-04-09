@@ -2613,7 +2613,6 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   });
 
   // ========================
-<<<<<<< HEAD
   // TRADINGVIEW MCP
   // ========================
 
@@ -2681,7 +2680,10 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
-=======
+    }
+  });
+
+  // ========================
   // RESEARCH WIKI
   // ========================
 
@@ -2781,7 +2783,6 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       res.json({ issues });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
->>>>>>> origin/feature/research-wiki
     }
   });
 
