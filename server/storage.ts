@@ -9,6 +9,7 @@ import {
   type PublishedPrediction, type InsertPublishedPrediction, publishedPredictions,
   type BenzingaNews, type InsertBenzingaNews, benzingaNews,
   type AppSetting, type InsertAppSetting, appSettings,
+  type Strategy, type InsertStrategy, strategies,
   type Watchlist, type InsertWatchlist, watchlists,
   type WatchlistItem, type InsertWatchlistItem, watchlistItems,
   type Notification, type InsertNotification, notifications,
@@ -188,6 +189,19 @@ sqlite.exec(`
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS strategies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    sharpe_ratio REAL,
+    total_return REAL,
+    max_drawdown REAL,
+    win_rate REAL,
+    trade_count INTEGER,
+    updated_at TEXT NOT NULL,
+    is_public INTEGER DEFAULT 1
+  );
+
   CREATE TABLE IF NOT EXISTS paper_positions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -241,6 +255,22 @@ if (existingWeights.length === 0) {
       crowding: DEFAULT_WEIGHTS.crowding,
     }).run();
   }
+}
+
+// Seed baseline strategy if empty
+const existingStrategies = db.select().from(strategies).all();
+if (existingStrategies.length === 0) {
+  db.insert(strategies).values({
+    name: "Autoresearch v1.986",
+    description: "Autoresearch-optimized multi-signal strategy with empirical probability calibration, fractional Kelly sizing, and feedback-driven weight tuning.",
+    sharpeRatio: 1.986,
+    totalReturn: 73.88,
+    maxDrawdown: 7.93,
+    winRate: 68.3,
+    tradeCount: 303,
+    updatedAt: new Date().toISOString(),
+    isPublic: 1,
+  }).run();
 }
 
 // Seed portfolio if empty
@@ -308,6 +338,11 @@ export interface IStorage {
   getSetting(key: string): Promise<AppSetting | undefined>;
   upsertSetting(key: string, value: string): Promise<AppSetting>;
   getAllSettings(): Promise<AppSetting[]>;
+
+  // Strategies
+  getStrategies(): Promise<Strategy[]>;
+  createStrategy(data: InsertStrategy): Promise<Strategy>;
+  updateStrategy(id: number, data: Partial<Strategy>): Promise<Strategy | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -556,6 +591,19 @@ export class DatabaseStorage implements IStorage {
 
   async markAllNotificationsRead(): Promise<void> {
     db.update(notifications).set({ read: 1 }).where(eq(notifications.read, 0)).run();
+  }
+
+  // Strategies
+  async getStrategies(): Promise<Strategy[]> {
+    return db.select().from(strategies).orderBy(desc(strategies.sharpeRatio)).all();
+  }
+
+  async createStrategy(data: InsertStrategy): Promise<Strategy> {
+    return db.insert(strategies).values(data).returning().get();
+  }
+
+  async updateStrategy(id: number, data: Partial<Strategy>): Promise<Strategy | undefined> {
+    return db.update(strategies).set(data).where(eq(strategies.id, id)).returning().get();
   }
 }
 

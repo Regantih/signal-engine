@@ -11,6 +11,7 @@ import {
   Newspaper,
   History,
   TrendingUp,
+  Trophy,
   Settings,
   Sliders,
   X,
@@ -31,6 +32,7 @@ const MORE_NAV = [
   { path: "/news", label: "News", icon: Newspaper },
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
+  { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { path: "/weights", label: "Weights", icon: Settings },
   { path: "/settings", label: "Settings", icon: Sliders },
 ];

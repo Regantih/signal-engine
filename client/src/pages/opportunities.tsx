@@ -12,7 +12,7 @@ import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
 import { SignalBar } from "@/components/signal-bar";
 import { SIGNAL_DESCRIPTIONS, scoreLocally, DEFAULT_WEIGHTS } from "@/lib/scoring";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap, ExternalLink, Sparkles } from "lucide-react";
+import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap, ExternalLink, Sparkles, FlaskConical } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -58,9 +58,94 @@ const DOMAIN_LABELS: Record<string, string> = {
   side_business: "Side Business",
 };
 
+function DecisionPipeline({ opp }: { opp: Opportunity }) {
+  const w = DEFAULT_WEIGHTS;
+  const signals = [
+    { name: "Momentum", raw: opp.momentum, weight: w.momentum, isNeg: false },
+    { name: "Mean Rev.", raw: opp.meanReversion, weight: w.meanReversion, isNeg: false },
+    { name: "Quality", raw: opp.quality, weight: w.quality, isNeg: false },
+    { name: "Flow", raw: opp.flow, weight: w.flow, isNeg: false },
+    { name: "Risk", raw: opp.risk, weight: w.risk, isNeg: true },
+    { name: "Crowding", raw: opp.crowding, weight: w.crowding, isNeg: true },
+  ];
+
+  const zScore = (v: number) => (v - 50) / 16.67;
+  const compositeScore = opp.compositeScore ?? 0;
+  const zScoreVal = compositeScore; // composite IS the z-score weighted sum
+  const prob = opp.probabilityOfSuccess ?? 0;
+  const edge = opp.expectedEdge ?? 0;
+  const kelly = opp.kellyFraction ?? 0;
+  const alloc = opp.suggestedAllocation ?? 0;
+
+  return (
+    <div className="mt-4 bg-slate-900/60 border border-slate-700/50 rounded-lg p-4 space-y-4" data-testid="decision-pipeline">
+      <div className="flex items-center gap-2 mb-1">
+        <FlaskConical className="w-4 h-4 text-cyan-400" />
+        <span className="text-sm font-semibold text-cyan-400">Decision Pipeline — How was this scored?</span>
+      </div>
+
+      {/* Step 1: Raw Signals x Weights = Contribution */}
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">Step 1: Raw Signals x Weights = Contribution</p>
+        <div className="bg-black/30 rounded-md p-3 font-mono text-xs space-y-1">
+          <div className="grid grid-cols-[1fr_0.6fr_0.5fr_0.8fr] gap-1 text-muted-foreground/50 mb-1">
+            <span>SIGNAL</span><span className="text-right">RAW/100</span><span className="text-right">WEIGHT</span><span className="text-right">CONTRIB</span>
+          </div>
+          {signals.map(({ name, raw, weight, isNeg }) => {
+            const z = zScore(raw);
+            const contrib = isNeg ? -(weight * z) : weight * z;
+            return (
+              <div key={name} className="grid grid-cols-[1fr_0.6fr_0.5fr_0.8fr] gap-1">
+                <span className="text-muted-foreground">{name}</span>
+                <span className="text-right tabular-nums">{raw.toFixed(0)}/100</span>
+                <span className="text-right tabular-nums text-muted-foreground/70">x {weight.toFixed(2)}</span>
+                <span className={`text-right tabular-nums font-medium ${contrib >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {contrib >= 0 ? "+" : ""}{contrib.toFixed(3)} {isNeg ? "(penalty)" : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Step 2-5: Score Pipeline */}
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">Step 2: Composite Score to Allocation</p>
+        <div className="bg-black/30 rounded-md p-3 font-mono text-xs space-y-2">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Composite Score (weighted sum)</span>
+            <span className="tabular-nums font-medium text-cyan-300">{compositeScore.toFixed(3)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">P(Success) = 1 / (1 + e^(-1.5 x {compositeScore.toFixed(2)}))</span>
+            <span className="tabular-nums font-medium text-amber-300">{(prob * 100).toFixed(1)}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Edge = P x 2.0 - (1-P) - 0.005</span>
+            <span className={`tabular-nums font-medium ${edge >= 0 ? "text-emerald-400" : "text-red-400"}`}>{edge >= 0 ? "+" : ""}{edge.toFixed(3)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Kelly = 0.25 x (P x 2.0 - (1-P)) / 2.0</span>
+            <span className="tabular-nums font-medium text-violet-300">{(kelly * 100).toFixed(2)}%</span>
+          </div>
+          <div className="border-t border-slate-700/50 pt-2 flex justify-between">
+            <span className="text-muted-foreground">Allocation = $100 x {(kelly * 100).toFixed(2)}%</span>
+            <span className="tabular-nums font-bold text-white">${alloc.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground/40">
+        Based on the scoring model. See full math on the Live Scoring page.
+      </p>
+    </div>
+  );
+}
+
 export default function Opportunities() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [pipelineId, setPipelineId] = useState<number | null>(null);
   const [filterDomain, setFilterDomain] = useState<string>("all");
   const { toast } = useToast();
 
@@ -644,6 +729,24 @@ export default function Opportunities() {
                       <p className="text-xs text-muted-foreground leading-relaxed">{opp.thesis}</p>
                     </div>
                   )}
+
+                  {/* Why this score? */}
+                  <div className="mt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 px-2 h-7"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPipelineId(pipelineId === opp.id ? null : opp.id);
+                      }}
+                      data-testid={`button-why-score-${opp.id}`}
+                    >
+                      <FlaskConical className="w-3 h-3 mr-1" />
+                      {pipelineId === opp.id ? "Hide pipeline" : "Why this score?"}
+                    </Button>
+                    {pipelineId === opp.id && <DecisionPipeline opp={opp} />}
+                  </div>
                 </div>
               )}
             </div>

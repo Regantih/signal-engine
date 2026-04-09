@@ -22,6 +22,7 @@ import SettingsPage from "@/pages/settings-page";
 import Scanner from "@/pages/scanner";
 import Trading from "@/pages/trading";
 import Macro from "@/pages/macro";
+import Leaderboard from "@/pages/leaderboard";
 
 function AppRouter() {
   return (
@@ -37,6 +38,7 @@ function AppRouter() {
       <Route path="/weights" component={Weights} />
       <Route path="/market" component={Market} />
       <Route path="/news" component={News} />
+      <Route path="/leaderboard" component={Leaderboard} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
