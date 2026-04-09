@@ -52,6 +52,9 @@ export const opportunities = sqliteTable("opportunities", {
   targetPrice: real("target_price"),
   stopLoss: real("stop_loss"),
   
+  // AI thesis
+  thesis: text("thesis"), // AI-generated trade analysis text
+
   // Status
   status: text("status").notNull().default("watch"), // watch | buy | sell | closed
   screenerFlags: text("screener_flags"), // JSON array of screener attributions

@@ -12,7 +12,7 @@ import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
 import { SignalBar } from "@/components/signal-bar";
 import { SIGNAL_DESCRIPTIONS, scoreLocally, DEFAULT_WEIGHTS } from "@/lib/scoring";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap, ExternalLink } from "lucide-react";
+import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Zap, ExternalLink, Sparkles } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -36,6 +36,7 @@ interface Opportunity {
   targetPrice: number | null;
   stopLoss: number | null;
   status: string;
+  thesis: string | null;
   screenerFlags: string | null;
   createdAt: string;
   updatedAt: string;
@@ -632,6 +633,17 @@ export default function Opportunities() {
                       </p>
                     </div>
                   </div>
+
+                  {/* AI Thesis */}
+                  {opp.thesis && (
+                    <div className="mt-4 bg-slate-800/50 border-l-2 border-amber-400/60 rounded-r-md p-3">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="text-xs font-medium text-amber-400">AI Analysis</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{opp.thesis}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

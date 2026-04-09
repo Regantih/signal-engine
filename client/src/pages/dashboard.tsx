@@ -15,6 +15,9 @@ import {
   Webhook,
   Copy,
   AlertTriangle,
+  Sparkles,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -50,6 +53,7 @@ interface Opportunity {
   targetPrice: number | null;
   stopLoss: number | null;
   status: string;
+  thesis: string | null;
   momentum: number;
   meanReversion: number;
   quality: number;
@@ -205,6 +209,8 @@ export default function Dashboard() {
     ?.filter((o) => o.compositeScore !== null)
     .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0))
     .slice(0, 5);
+
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   if (statsLoading || oppsLoading) {
     return (
@@ -407,55 +413,81 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {topOpps.map((opp) => (
-                  <tr key={opp.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="py-2.5 px-3 font-medium">
-                      {opp.name}
-                      {opp.ticker && (
-                        <span className="ml-1.5 text-xs text-muted-foreground font-mono">
-                          {opp.ticker}
+                  <>
+                    <tr
+                      key={opp.id}
+                      className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => setExpandedRow(expandedRow === opp.id ? null : opp.id)}
+                    >
+                      <td className="py-2.5 px-3 font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          {expandedRow === opp.id ? (
+                            <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                          )}
+                          {opp.name}
+                          {opp.ticker && (
+                            <span className="ml-1.5 text-xs text-muted-foreground font-mono">
+                              {opp.ticker}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-muted-foreground text-xs">
-                      {DOMAIN_LABELS[opp.domain] || opp.domain}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
-                      {opp.compositeScore?.toFixed(3)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
-                      {opp.probabilityOfSuccess ? `${(opp.probabilityOfSuccess * 100).toFixed(1)}%` : "—"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
-                      {opp.expectedEdge?.toFixed(3)}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      {opp.convictionBand && <ConvictionBadge band={opp.convictionBand} />}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
-                      ${opp.suggestedAllocation?.toFixed(2)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-emerald-600">
-                      {opp.targetPrice ? `$${opp.targetPrice.toFixed(2)}` : "—"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-red-500">
-                      {opp.stopLoss ? `$${opp.stopLoss.toFixed(2)}` : "—"}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <ActionBadge action={opp.status.toUpperCase()} />
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      {(() => {
-                        const f = opp.ticker ? fundamentalsMap.get(opp.ticker.toUpperCase()) : null;
-                        if (!f) return <span className="text-xs text-muted-foreground/40">—</span>;
-                        const grade = f.fundamentalGrade;
-                        return (
-                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold border ${GRADE_COLORS[grade] || "bg-muted text-muted-foreground"}`}>
-                            {grade}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground text-xs">
+                        {DOMAIN_LABELS[opp.domain] || opp.domain}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
+                        {opp.compositeScore?.toFixed(3)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
+                        {opp.probabilityOfSuccess ? `${(opp.probabilityOfSuccess * 100).toFixed(1)}%` : "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
+                        {opp.expectedEdge?.toFixed(3)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {opp.convictionBand && <ConvictionBadge band={opp.convictionBand} />}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs">
+                        ${opp.suggestedAllocation?.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-emerald-600">
+                        {opp.targetPrice ? `$${opp.targetPrice.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums font-mono text-xs text-red-500">
+                        {opp.stopLoss ? `$${opp.stopLoss.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <ActionBadge action={opp.status.toUpperCase()} />
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {(() => {
+                          const f = opp.ticker ? fundamentalsMap.get(opp.ticker.toUpperCase()) : null;
+                          if (!f) return <span className="text-xs text-muted-foreground/40">—</span>;
+                          const grade = f.fundamentalGrade;
+                          return (
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold border ${GRADE_COLORS[grade] || "bg-muted text-muted-foreground"}`}>
+                              {grade}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                    {expandedRow === opp.id && opp.thesis && (
+                      <tr key={`${opp.id}-thesis`}>
+                        <td colSpan={11} className="px-3 py-0">
+                          <div className="bg-slate-800/50 border-l-2 border-primary rounded-r-md p-3 my-1.5">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="text-xs font-medium text-amber-400">AI Analysis</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">{opp.thesis}</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

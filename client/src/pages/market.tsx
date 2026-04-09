@@ -5,7 +5,7 @@ import { ConvictionBadge, ActionBadge } from "@/components/conviction-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LineChart, TrendingUp, TrendingDown, Zap } from "lucide-react";
+import { LineChart, TrendingUp, TrendingDown, Zap, Sparkles } from "lucide-react";
 
 interface Opportunity {
   id: number;
@@ -18,6 +18,7 @@ interface Opportunity {
   convictionBand: string | null;
   suggestedAllocation: number | null;
   status: string;
+  thesis: string | null;
   entryPrice: number | null;
   targetPrice: number | null;
   stopLoss: number | null;
@@ -244,6 +245,19 @@ function MarketCard({ opp }: { opp: Opportunity }) {
           </div>
         </div>
       </div>
+
+      {/* AI Analysis */}
+      {opp.thesis && (
+        <div className="px-4 pb-4">
+          <div className="bg-slate-800/50 border-l-2 border-amber-400/60 rounded-r-md p-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-medium text-amber-400">AI Analysis</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">{opp.thesis}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

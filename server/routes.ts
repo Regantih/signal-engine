@@ -17,6 +17,7 @@ import { requireAuth, generateToken, validatePassword, isPasswordSet } from "./a
 import { captureCredentials } from "./credentials";
 import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
 import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysis";
+import { generateThesis } from "./ai-thesis";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -334,6 +335,27 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/thesis/:ticker — Get AI thesis for a specific ticker
+  app.get("/api/thesis/:ticker", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      const opps = await storage.getOpportunities();
+      const opp = opps.find(o => o.ticker?.toUpperCase() === ticker);
+      if (!opp) return res.status(404).json({ error: `No opportunity found for ticker ${ticker}` });
+
+      // Return cached thesis if available, otherwise generate fresh
+      if (opp.thesis) {
+        return res.json({ ticker, thesis: opp.thesis });
+      }
+
+      const thesis = generateThesis(opp);
+      await storage.updateOpportunity(opp.id, { thesis, updatedAt: new Date().toISOString() });
+      res.json({ ticker, thesis });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   // Rescore ALL opportunities
   app.post("/api/rescore-all", async (_req, res) => {
     try {
@@ -376,6 +398,10 @@ export async function registerRoutes(
 
         const action = suggestAction(result);
 
+        // Generate AI thesis
+        const updatedOpp = { ...opp, ...result, status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch" };
+        const thesis = generateThesis(updatedOpp as any);
+
         await storage.updateOpportunity(opp.id, {
           compositeScore: result.compositeScore,
           probabilityOfSuccess: result.probabilityOfSuccess,
@@ -384,10 +410,11 @@ export async function registerRoutes(
           convictionBand: result.convictionBand,
           suggestedAllocation: result.suggestedAllocation,
           status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          thesis,
           updatedAt: now,
         });
 
-        results.push({ id: opp.id, name: opp.name, ...result, action });
+        results.push({ id: opp.id, name: opp.name, ...result, action, thesis });
       }
 
       res.json(results);
@@ -948,6 +975,23 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         const action = suggestAction(result);
         const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
 
+        // Generate AI thesis
+        const scoredOpp = {
+          ...opp,
+          ...result,
+          entryPrice: signals.metadata.price,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+        };
+        const thesis = generateThesis(scoredOpp as any, signals);
+
         const updated = await storage.updateOpportunity(opp.id, {
           compositeScore: result.compositeScore,
           probabilityOfSuccess: result.probabilityOfSuccess,
@@ -958,6 +1002,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           targetPrice: priceLevels.targetPrice,
           stopLoss: priceLevels.stopLoss,
           status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          thesis,
           updatedAt: now,
         });
 
@@ -975,7 +1020,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           targetPrice: priceLevels.targetPrice,
           stopLoss: priceLevels.stopLoss,
           currentPrice: signals.metadata.price,
-          reasoning: `Auto-scored from live data: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+          reasoning: thesis,
           signalSnapshot: JSON.stringify({ ...signals, weights }),
           timestamp: now,
         });
@@ -1038,6 +1083,23 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         const action = suggestAction(result);
         const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
 
+        // Generate AI thesis for new opportunity
+        const newScoredOpp = {
+          ...newOpp,
+          ...result,
+          entryPrice: signals.metadata.price,
+          targetPrice: priceLevels.targetPrice,
+          stopLoss: priceLevels.stopLoss,
+          status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+        };
+        const newThesis = generateThesis(newScoredOpp as any, signals);
+
         const updated = await storage.updateOpportunity(newOpp.id, {
           compositeScore: result.compositeScore,
           probabilityOfSuccess: result.probabilityOfSuccess,
@@ -1048,6 +1110,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           targetPrice: priceLevels.targetPrice,
           stopLoss: priceLevels.stopLoss,
           status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+          thesis: newThesis,
           updatedAt: now,
         });
 
@@ -1064,7 +1127,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
           targetPrice: priceLevels.targetPrice,
           stopLoss: priceLevels.stopLoss,
           currentPrice: signals.metadata.price,
-          reasoning: `Auto-scored from live data: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+          reasoning: newThesis,
           signalSnapshot: JSON.stringify({ ...signals, weights }),
           timestamp: now,
         });
@@ -1160,6 +1223,17 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
             const action = suggestAction(result);
             const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
 
+            // Generate AI thesis with signal snapshot for rich data
+            const scoredOpp = {
+              ...opp,
+              ...result,
+              entryPrice: signals.metadata.price,
+              targetPrice: priceLevels.targetPrice,
+              stopLoss: priceLevels.stopLoss,
+              status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+            };
+            const thesis = generateThesis(scoredOpp as any, signals);
+
             await storage.updateOpportunity(opp.id, {
               compositeScore: result.compositeScore,
               probabilityOfSuccess: result.probabilityOfSuccess,
@@ -1170,6 +1244,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
               targetPrice: priceLevels.targetPrice,
               stopLoss: priceLevels.stopLoss,
               status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+              thesis,
               updatedAt: now,
             });
 
@@ -1186,7 +1261,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
               targetPrice: priceLevels.targetPrice,
               stopLoss: priceLevels.stopLoss,
               currentPrice: signals.metadata.price,
-              reasoning: `Bulk auto-scored: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+              reasoning: thesis,
               signalSnapshot: JSON.stringify(signals),
               timestamp: now,
             });

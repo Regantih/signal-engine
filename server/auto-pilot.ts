@@ -7,6 +7,7 @@ import { fetchOHLCV } from "./market-data-provider";
 import { fetchBenzingaNews, rescoreZeroSentimentArticles } from "./benzinga-service";
 import { executePaperTrade, getPaperPositions } from "./paper-trading";
 import { isAlpacaConnected } from "./alpaca-service";
+import { generateThesis } from "./ai-thesis";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -71,6 +72,23 @@ async function autoScoreTicker(ticker: string): Promise<boolean> {
     const action = suggestAction(result);
     const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
 
+    // Generate AI thesis
+    const scoredOpp = {
+      ...opp,
+      ...result,
+      entryPrice: signals.metadata.price,
+      targetPrice: priceLevels.targetPrice,
+      stopLoss: priceLevels.stopLoss,
+      status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+      momentum: signals.momentum,
+      meanReversion: signals.meanReversion,
+      quality: signals.quality,
+      flow: signals.flow,
+      risk: signals.risk,
+      crowding: signals.crowding,
+    };
+    const thesis = generateThesis(scoredOpp as any, signals);
+
     await storage.updateOpportunity(opp.id, {
       compositeScore: result.compositeScore,
       probabilityOfSuccess: result.probabilityOfSuccess,
@@ -81,6 +99,7 @@ async function autoScoreTicker(ticker: string): Promise<boolean> {
       targetPrice: priceLevels.targetPrice,
       stopLoss: priceLevels.stopLoss,
       status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+      thesis,
       updatedAt: now,
     });
 
@@ -97,7 +116,7 @@ async function autoScoreTicker(ticker: string): Promise<boolean> {
       targetPrice: priceLevels.targetPrice,
       stopLoss: priceLevels.stopLoss,
       currentPrice: signals.metadata.price,
-      reasoning: `Autopilot auto-scored: Mom=${signals.momentum} MR=${signals.meanReversion} Qual=${signals.quality} Flow=${signals.flow} Risk=${signals.risk} Crowd=${signals.crowding}`,
+      reasoning: thesis,
       signalSnapshot: JSON.stringify({ ...signals, weights }),
       timestamp: now,
     });

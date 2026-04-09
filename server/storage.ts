@@ -193,6 +193,13 @@ try {
   // Column already exists — ignore
 }
 
+// Migrate: add thesis column if it doesn't exist
+try {
+  sqlite.exec(`ALTER TABLE opportunities ADD COLUMN thesis TEXT`);
+} catch (_e) {
+  // Column already exists — ignore
+}
+
 // Seed default weights if empty
 const existingWeights = db.select().from(weightConfig).all();
 if (existingWeights.length === 0) {
