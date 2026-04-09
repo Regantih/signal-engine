@@ -18,6 +18,7 @@ import {
   Globe,
   Scale,
   Trophy,
+  BookOpen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { path: "/accountability", label: "Accountability", icon: Scale },
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
+  { path: "/wiki", label: "Research Wiki", icon: BookOpen },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { path: "/weights", label: "Weights", icon: Settings },
   { path: "/settings", label: "Settings", icon: Sliders },
