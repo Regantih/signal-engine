@@ -961,6 +961,119 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   });
 
   // ========================
+  // PUBLIC INSTANT SCORE (no auth required — GET passes through requireAuth)
+  // ========================
+
+  // In-memory score cache (15-minute TTL)
+  const scoreCache = new Map<string, { data: any; expiresAt: number }>();
+  const SCORE_CACHE_TTL = 15 * 60 * 1000;
+
+  // GET /api/score/:ticker — Public instant score for any ticker
+  app.get("/api/score/:ticker", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      if (!ticker || ticker.length > 10 || !/^[A-Z]{1,10}$/.test(ticker)) {
+        return res.status(400).json({ error: "Invalid ticker symbol" });
+      }
+
+      // Check cache first
+      const cached = scoreCache.get(ticker);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json({ ...cached.data, cached: true });
+      }
+
+      // Always compute live signals for fresh data
+      let signals: Awaited<ReturnType<typeof computeAutoSignals>> = null;
+      try { signals = await computeAutoSignals(ticker); } catch {}
+      if (!signals) {
+        return res.status(404).json({ error: `Could not compute score for ${ticker}. Market data unavailable.` });
+      }
+
+      // Use existing name from DB if available
+      const opps = await storage.getOpportunities();
+      const existing = opps.find(o => o.ticker?.toUpperCase() === ticker);
+      const displayName = existing?.name || ticker;
+
+      const weights = {
+        momentum: DEFAULT_WEIGHTS.momentum,
+        meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+        quality: DEFAULT_WEIGHTS.quality,
+        flow: DEFAULT_WEIGHTS.flow,
+        risk: DEFAULT_WEIGHTS.risk,
+        crowding: DEFAULT_WEIGHTS.crowding,
+      };
+
+      const sigInputs = {
+        momentum: signals.momentum,
+        meanReversion: signals.meanReversion,
+        quality: signals.quality,
+        flow: signals.flow,
+        risk: signals.risk,
+        crowding: signals.crowding,
+      };
+
+      const result = scoreOpportunity(sigInputs, weights, 100);
+
+      const action = suggestAction(result);
+      const entryPrice = signals.metadata?.price || 0;
+      const priceLevels = entryPrice > 0
+        ? computePriceLevels(entryPrice, result.probabilityOfSuccess)
+        : { targetPrice: 0, stopLoss: 0 };
+
+      let fundamentals: Awaited<ReturnType<typeof fetchFundamentals>> | null = null;
+      try { fundamentals = await fetchFundamentals(ticker); } catch {}
+
+      const price = entryPrice || fundamentals?.currentPrice || null;
+      const scoreVal = Math.round(result.probabilityOfSuccess * 100);
+
+      const scoreData = {
+        ticker,
+        name: displayName,
+        price,
+        score: scoreVal,
+        compositeScore: result.compositeScore,
+        probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge,
+        conviction: result.convictionBand,
+        action,
+        signals: {
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+        },
+        target: priceLevels.targetPrice || null,
+        stopLoss: priceLevels.stopLoss || null,
+        entry: price,
+        fundamentals: fundamentals ? {
+          grade: fundamentals.fundamentalGrade,
+          score: fundamentals.fundamentalScore,
+          pe: fundamentals.peRatio,
+          forwardPE: fundamentals.forwardPE,
+          fairValue: fundamentals.fairValue,
+          fairValueUpside: fundamentals.fairValueUpside,
+          profitMargin: fundamentals.profitMargin,
+          revenueGrowth: fundamentals.revenueGrowth,
+          dividendYield: fundamentals.dividendYield,
+        } : null,
+        thesis: `${displayName} scores ${scoreVal}/100 with ${result.convictionBand} conviction. ` +
+          `Momentum=${signals.momentum}, Quality=${signals.quality}, Flow=${signals.flow}. ` +
+          (fundamentals?.fairValueUpside ? `Fair value upside: ${fundamentals.fairValueUpside.toFixed(1)}%. ` : "") +
+          (priceLevels.targetPrice ? `Target: $${priceLevels.targetPrice.toFixed(2)}, Stop: $${priceLevels.stopLoss.toFixed(2)}.` : ""),
+        scoredAt: new Date().toISOString(),
+        cached: false,
+      };
+
+      scoreCache.set(ticker, { data: scoreData, expiresAt: Date.now() + SCORE_CACHE_TTL });
+      res.json(scoreData);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ========================
   // AUTO-SCORE (Live Data)
   // ========================
 
