@@ -1,5 +1,7 @@
 import { scanUniverse, addScannedOpportunity, setLastScanResults } from "./universe-scanner";
 import { computeAutoSignals } from "./auto-signals";
+import { computeCryptoSignals, CRYPTO_TICKERS } from "./crypto-signals";
+import { computeETFSignals, ETF_TICKERS } from "./etf-signals";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { storage } from "./storage";
 import { DEFAULT_WEIGHTS } from "@shared/schema";
@@ -167,6 +169,99 @@ async function autoFetchNews(tickers: string[]): Promise<void> {
   }
 }
 
+async function scoreDomainAssets(
+  domain: string,
+  tickers: string[],
+  computeSignals: (ticker: string) => Promise<{ momentum: number; meanReversion: number; quality: number; flow: number; risk: number; crowding: number; metadata: { ticker: string; price: number; computedAt: string; dataPoints: Record<string, any> } } | null>,
+): Promise<number> {
+  let scored = 0;
+  const opps = await storage.getOpportunities();
+
+  for (const ticker of tickers) {
+    try {
+      const signals = await computeSignals(ticker);
+      if (!signals) continue;
+
+      const now = new Date().toISOString();
+      let opp = opps.find(o => o.ticker?.toUpperCase() === ticker.toUpperCase() && o.domain === domain);
+
+      if (!opp) {
+        opp = await storage.createOpportunity({
+          name: `${ticker} (${domain})`,
+          ticker: ticker.toUpperCase(),
+          domain,
+          description: `Auto-discovered ${domain} asset`,
+          momentum: signals.momentum,
+          meanReversion: signals.meanReversion,
+          quality: signals.quality,
+          flow: signals.flow,
+          risk: signals.risk,
+          crowding: signals.crowding,
+          entryPrice: signals.metadata.price,
+          targetPrice: null,
+          stopLoss: null,
+          status: "watch",
+          screenerFlags: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await storage.updateOpportunity(opp.id, {
+          momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality,
+          flow: signals.flow, risk: signals.risk, crowding: signals.crowding,
+          entryPrice: signals.metadata.price, updatedAt: now,
+        });
+      }
+
+      const weights = await storage.getWeights(domain) || {
+        momentum: DEFAULT_WEIGHTS.momentum,
+        meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+        quality: DEFAULT_WEIGHTS.quality,
+        flow: DEFAULT_WEIGHTS.flow,
+        risk: DEFAULT_WEIGHTS.risk,
+        crowding: DEFAULT_WEIGHTS.crowding,
+      };
+      const portfolio = await storage.getPortfolio();
+      const budget = portfolio?.cashRemaining || 100;
+
+      const result = scoreOpportunity(
+        { momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality, flow: signals.flow, risk: signals.risk, crowding: signals.crowding },
+        { momentum: weights.momentum, meanReversion: weights.meanReversion, quality: weights.quality, flow: weights.flow, risk: weights.risk, crowding: weights.crowding },
+        budget
+      );
+
+      const action = suggestAction(result);
+      const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+      await storage.updateOpportunity(opp.id, {
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: result.suggestedAllocation,
+        targetPrice: priceLevels.targetPrice, stopLoss: priceLevels.stopLoss,
+        status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+        updatedAt: now,
+      });
+
+      await storage.createPrediction({
+        opportunityId: opp.id, action,
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: result.suggestedAllocation,
+        entryPrice: signals.metadata.price, targetPrice: priceLevels.targetPrice,
+        stopLoss: priceLevels.stopLoss, currentPrice: signals.metadata.price,
+        reasoning: `Autopilot ${domain}: Mom=${signals.momentum} Qual=${signals.quality} Flow=${signals.flow}`,
+        signalSnapshot: JSON.stringify(signals),
+        timestamp: now,
+      });
+
+      scored++;
+    } catch (e: any) {
+      console.error(`[autopilot] ${domain} score failed for ${ticker}: ${e.message}`);
+    }
+  }
+  return scored;
+}
+
 async function runAutopilot(): Promise<void> {
   try {
     console.log("[autopilot] Scanning universe...");
@@ -193,7 +288,7 @@ async function runAutopilot(): Promise<void> {
     // Auto-score ALL opportunities with tickers
     const allOpps = await storage.getOpportunities();
     const marketOpps = allOpps.filter(o => o.domain === "public_markets" && o.ticker);
-    console.log(`[autopilot] Scoring ${marketOpps.length} opportunities...`);
+    console.log(`[autopilot] Scoring ${marketOpps.length} public_markets opportunities...`);
 
     let scored = 0;
     for (const opp of marketOpps) {
@@ -201,7 +296,19 @@ async function runAutopilot(): Promise<void> {
       if (ok) scored++;
     }
 
-    console.log(`[autopilot] Done. Scored ${scored}/${marketOpps.length} opportunities`);
+    console.log(`[autopilot] Done equities. Scored ${scored}/${marketOpps.length}`);
+
+    // Score crypto assets
+    console.log(`[autopilot] Scoring ${CRYPTO_TICKERS.length} crypto assets...`);
+    const cryptoScored = await scoreDomainAssets("crypto", CRYPTO_TICKERS, (t) => computeCryptoSignals(t));
+    console.log(`[autopilot] Done crypto. Scored ${cryptoScored}/${CRYPTO_TICKERS.length}`);
+    scored += cryptoScored;
+
+    // Score ETF assets
+    console.log(`[autopilot] Scoring ${ETF_TICKERS.length} ETF assets...`);
+    const etfScored = await scoreDomainAssets("etf", ETF_TICKERS, (t) => computeETFSignals(t));
+    console.log(`[autopilot] Done ETFs. Scored ${etfScored}/${ETF_TICKERS.length}`);
+    scored += etfScored;
 
     // Cap total allocations to budget — rank by score, allocate top-down
     try {

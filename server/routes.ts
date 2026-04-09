@@ -5,6 +5,8 @@ import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-e
 import { insertOpportunitySchema, DEFAULT_WEIGHTS } from "@shared/schema";
 import { fetchBenzingaNews, getNewsSentimentScore } from "./benzinga-service";
 import { computeAutoSignals } from "./auto-signals";
+import { computeCryptoSignals, CRYPTO_TICKERS } from "./crypto-signals";
+import { computeETFSignals, ETF_TICKERS } from "./etf-signals";
 import { scanUniverse, addScannedOpportunity, getLastScanResults, setLastScanResults } from "./universe-scanner";
 import { getAccount, getPositions, getOrders, placeBracketOrder, closePosition, closeAllPositions, isAlpacaConnected } from "./alpaca-service";
 import { executePaperTrade, getPaperPositions, getPaperOrders, closePaperPosition, closeAllPaperPositions, getPaperAccountSummary } from "./paper-trading";
@@ -62,6 +64,89 @@ const rateLimiter = {
     return true;
   }
 };
+
+// Helper: score a list of tickers for a given domain (crypto/etf)
+async function scoreMultiAssetDomain(
+  domain: string,
+  tickers: string[],
+  computeSignals: (ticker: string) => Promise<{ momentum: number; meanReversion: number; quality: number; flow: number; risk: number; crowding: number; metadata: { ticker: string; price: number; computedAt: string; dataPoints: Record<string, any> } } | null>,
+): Promise<Array<{ ticker: string; signals?: any; price?: number; error?: string }>> {
+  const opps = await storage.getOpportunities();
+  const results: Array<{ ticker: string; signals?: any; price?: number; error?: string }> = [];
+
+  for (const ticker of tickers) {
+    try {
+      const signals = await computeSignals(ticker);
+      if (!signals) {
+        results.push({ ticker, error: "Failed to compute signals" });
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      let opp = opps.find(o => o.ticker?.toUpperCase() === ticker.toUpperCase() && o.domain === domain);
+
+      if (!opp) {
+        opp = await storage.createOpportunity({
+          name: `${ticker} (${domain})`,
+          ticker: ticker.toUpperCase(),
+          domain,
+          description: `Auto-discovered ${domain} asset`,
+          momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality,
+          flow: signals.flow, risk: signals.risk, crowding: signals.crowding,
+          entryPrice: signals.metadata.price, targetPrice: null, stopLoss: null,
+          status: "watch", screenerFlags: null, createdAt: now, updatedAt: now,
+        });
+      } else {
+        await storage.updateOpportunity(opp.id, {
+          momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality,
+          flow: signals.flow, risk: signals.risk, crowding: signals.crowding,
+          entryPrice: signals.metadata.price, updatedAt: now,
+        });
+      }
+
+      const weights = await storage.getWeights(domain) || {
+        momentum: DEFAULT_WEIGHTS.momentum, meanReversion: DEFAULT_WEIGHTS.mean_reversion,
+        quality: DEFAULT_WEIGHTS.quality, flow: DEFAULT_WEIGHTS.flow,
+        risk: DEFAULT_WEIGHTS.risk, crowding: DEFAULT_WEIGHTS.crowding,
+      };
+      const portfolio = await storage.getPortfolio();
+      const budget = portfolio?.cashRemaining || 100;
+
+      const result = scoreOpportunity(
+        { momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality, flow: signals.flow, risk: signals.risk, crowding: signals.crowding },
+        { momentum: weights.momentum, meanReversion: weights.meanReversion, quality: weights.quality, flow: weights.flow, risk: weights.risk, crowding: weights.crowding },
+        budget
+      );
+      const action = suggestAction(result);
+      const priceLevels = computePriceLevels(signals.metadata.price, result.probabilityOfSuccess);
+
+      await storage.updateOpportunity(opp.id, {
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: result.suggestedAllocation,
+        targetPrice: priceLevels.targetPrice, stopLoss: priceLevels.stopLoss,
+        status: action === "BUY" ? "buy" : action === "SELL" ? "sell" : "watch",
+        updatedAt: now,
+      });
+
+      await storage.createPrediction({
+        opportunityId: opp.id, action,
+        compositeScore: result.compositeScore, probabilityOfSuccess: result.probabilityOfSuccess,
+        expectedEdge: result.expectedEdge, kellyFraction: result.kellyFraction,
+        convictionBand: result.convictionBand, suggestedAllocation: result.suggestedAllocation,
+        entryPrice: signals.metadata.price, targetPrice: priceLevels.targetPrice,
+        stopLoss: priceLevels.stopLoss, currentPrice: signals.metadata.price,
+        reasoning: `Auto-scored ${domain}: Mom=${signals.momentum} Qual=${signals.quality} Flow=${signals.flow}`,
+        signalSnapshot: JSON.stringify(signals), timestamp: now,
+      });
+
+      results.push({ ticker, signals: { momentum: signals.momentum, meanReversion: signals.meanReversion, quality: signals.quality, flow: signals.flow, risk: signals.risk, crowding: signals.crowding }, price: signals.metadata.price });
+    } catch (e: any) {
+      results.push({ ticker, error: e.message });
+    }
+  }
+  return results;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1275,6 +1360,26 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       }
 
       res.json({ results, count: results.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/auto-score-crypto — Score all crypto assets via CoinGecko
+  app.post("/api/auto-score-crypto", async (_req, res) => {
+    try {
+      const results = await scoreMultiAssetDomain("crypto", CRYPTO_TICKERS, (t) => computeCryptoSignals(t));
+      res.json({ results, count: results.length, domain: "crypto" });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/auto-score-etf — Score all ETF assets via Yahoo Finance
+  app.post("/api/auto-score-etf", async (_req, res) => {
+    try {
+      const results = await scoreMultiAssetDomain("etf", ETF_TICKERS, (t) => computeETFSignals(t));
+      res.json({ results, count: results.length, domain: "etf" });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
