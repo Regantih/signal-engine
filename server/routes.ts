@@ -22,6 +22,7 @@ import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysi
 import { generateThesis } from "./ai-thesis";
 import { resolveOldPredictions } from "./prediction-resolver";
 import { computePortfolioAnalytics } from "./portfolio-analytics";
+import { getTVConnectionStatus, getMorningBrief, clearTVCache } from "./tradingview-bridge";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -2605,6 +2606,77 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     try {
       await storage.markAllNotificationsRead();
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // TRADINGVIEW MCP
+  // ========================
+
+  app.get("/api/tradingview/status", (_req, res) => {
+    try {
+      const status = getTVConnectionStatus();
+      res.json(status);
+    } catch (e: any) {
+      res.json({
+        connected: false,
+        message: "TradingView MCP not installed. See setup instructions.",
+        lastChecked: new Date().toISOString(),
+      });
+    }
+  });
+
+  app.post("/api/tradingview/test", (_req, res) => {
+    try {
+      clearTVCache();
+      const status = getTVConnectionStatus();
+      res.json(status);
+    } catch (e: any) {
+      res.json({
+        connected: false,
+        message: "TradingView MCP not installed. See setup instructions.",
+        lastChecked: new Date().toISOString(),
+      });
+    }
+  });
+
+  app.get("/api/morning-brief", async (_req, res) => {
+    try {
+      // Try TradingView morning brief
+      const tvBrief = await getMorningBrief();
+
+      // Get Signal Engine daily digest
+      const opps = await storage.getOpportunities();
+      const buySignals = opps.filter(o => o.status === "buy");
+      const highConviction = opps.filter(o => o.convictionBand === "HIGH");
+      const recentlyScored = opps
+        .filter(o => o.updatedAt && Date.now() - new Date(o.updatedAt).getTime() < 24 * 60 * 60 * 1000)
+        .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0))
+        .slice(0, 5);
+
+      const digest = {
+        activeBuySignals: buySignals.length,
+        highConvictionCount: highConviction.length,
+        topOpportunities: recentlyScored.map(o => ({
+          ticker: o.ticker,
+          name: o.name,
+          compositeScore: o.compositeScore,
+          convictionBand: o.convictionBand,
+          targetPrice: o.targetPrice,
+          stopLoss: o.stopLoss,
+        })),
+      };
+
+      res.json({
+        tradingview: tvBrief,
+        signalEngine: digest,
+        combined: tvBrief
+          ? `${tvBrief.summary}\n\nSignal Engine: ${buySignals.length} active buy signals, ${highConviction.length} high conviction.`
+          : `Signal Engine: ${buySignals.length} active buy signals, ${highConviction.length} high conviction. TradingView MCP not connected — install for real-time market brief.`,
+        timestamp: new Date().toISOString(),
+      });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

@@ -8,6 +8,7 @@ import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position 
 import { fetchMacroSnapshot } from "./macro-monitor";
 import { resolveOldPredictions } from "./prediction-resolver";
 import { DEFAULT_WEIGHTS } from "@shared/schema";
+import { isTVMCPAvailable, deploySignalAlertPineScript } from "./tradingview-bridge";
 
 // Cost tracking
 let apiCallCount = 0;
@@ -354,6 +355,16 @@ export async function runDailyPipeline(): Promise<PipelineResult> {
           earningsBlocked.push(`${ticker} (earnings ${eb.earningsDate}, ${eb.daysUntil}d away)`);
         } else {
           pending.push({ type: "BUY", ticker, reason: `Score ${result.compositeScore.toFixed(3)}, P(success) ${(result.probabilityOfSuccess * 100).toFixed(1)}%, allocation $${adjustedAllocation}`, allocation: adjustedAllocation, opportunityId: opp.id });
+
+          // Auto-create TradingView alerts for HIGH conviction picks
+          if (result.convictionBand === "HIGH" && priceLevels.targetPrice && priceLevels.stopLoss && isTVMCPAvailable()) {
+            try {
+              const deployed = await deploySignalAlertPineScript(ticker, priceLevels.targetPrice, priceLevels.stopLoss);
+              if (deployed) {
+                console.log(`[autopilot] TradingView alert created: ${ticker} target $${priceLevels.targetPrice.toFixed(2)} / stop $${priceLevels.stopLoss.toFixed(2)}`);
+              }
+            } catch { /* TV alert creation is best-effort */ }
+          }
         }
       }
     } catch (e: any) { console.error(`Score failed for ${opp.ticker}:`, e.message); }

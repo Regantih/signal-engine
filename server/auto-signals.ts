@@ -1,4 +1,5 @@
 import { fetchQuotes, fetchOHLCV, fetchCompanyRatios, type CompanyRatios } from "./market-data-provider";
+import { isTVMCPAvailable, getLiveQuote, getIndicators } from "./tradingview-bridge";
 
 interface AutoSignals {
   momentum: number;
@@ -244,11 +245,12 @@ function computeCrowding(pe: number, evEbitda: number, marketCap: number): { sco
 export async function computeAutoSignals(ticker: string): Promise<AutoSignals | null> {
   console.log(`[auto-signals] Computing signals for ${ticker}...`);
 
-  // 1. Get price history (100 days)
+  // 1. Get price history (100 days) — always from Yahoo (TV doesn't provide deep history)
   const ohlcv = await fetchOHLCV(ticker, "6mo", "1d");
   const priceHistory = ohlcv.slice(-100).map(bar => ({ close: bar.close, volume: bar.volume }));
 
-  // 2. Get current quote
+  // 2. Get current quote — prefer TradingView live data, fall back to Yahoo Finance
+  let dataSource = "yahoo";
   const quotes = await fetchQuotes([ticker]);
   const quote = quotes[0];
 
@@ -257,13 +259,36 @@ export async function computeAutoSignals(ticker: string): Promise<AutoSignals | 
     return null;
   }
 
-  const currentPrice = quote.price;
-  const volume = quote.volume;
+  let currentPrice = quote.price;
+  let volume = quote.volume;
   const avgVolume = quote.avgVolume || 1;
   const yearLow = quote.yearLow || currentPrice * 0.7;
   const yearHigh = quote.yearHigh || currentPrice * 1.3;
   const pe = quote.pe || 20;
   const marketCap = quote.marketCap || 0;
+
+  // TradingView MCP live quote override (real-time vs Yahoo's 15-min delay)
+  let tvIndicators: { rsi?: number; macd?: { value: number; signal: number; histogram: number } } | null = null;
+  if (isTVMCPAvailable()) {
+    try {
+      const tvQuote = await getLiveQuote(ticker);
+      if (tvQuote && tvQuote.price > 0) {
+        currentPrice = tvQuote.price;
+        volume = tvQuote.volume || volume;
+        dataSource = "tradingview";
+        console.log(`[auto-signals] ${ticker}: Using TradingView live price $${currentPrice}`);
+      }
+
+      // Also grab TV indicators for enhanced signal quality
+      const tvInd = await getIndicators(ticker);
+      if (tvInd) {
+        tvIndicators = { rsi: tvInd.rsi, macd: tvInd.macd };
+      }
+    } catch {
+      // TV failed mid-computation — continue with Yahoo data
+      console.log(`[auto-signals] ${ticker}: TV MCP error, falling back to Yahoo`);
+    }
+  }
 
   // 3. Get financial ratios
   const ratios = await fetchCompanyRatios(ticker);
@@ -279,13 +304,26 @@ export async function computeAutoSignals(ticker: string): Promise<AutoSignals | 
   const risk = computeRisk(priceHistory, yearLow, currentPrice);
   const crowding = computeCrowding(pe, ratios.evEbitda, marketCap);
 
+  // If TradingView provided RSI, use it to refine meanReversion (TV RSI is real-time)
+  let finalMeanReversion = meanReversion.score;
+  if (tvIndicators?.rsi != null) {
+    const tvRsi = tvIndicators.rsi;
+    // Blend: if TV RSI diverges significantly from computed RSI, adjust
+    if (tvRsi < 30 && meanReversion.score < 80) {
+      finalMeanReversion = Math.min(95, meanReversion.score + 8);
+    } else if (tvRsi > 70 && meanReversion.score > 25) {
+      finalMeanReversion = Math.max(10, meanReversion.score - 8);
+    }
+    meanReversion.data.tvRsi = +tvRsi.toFixed(1);
+  }
+
   console.log(
-    `[auto-signals] ${ticker}: Mom=${momentum.score} MR=${meanReversion.score} Qual=${quality.score} Flow=${flow.score} Risk=${risk.score} Crowd=${crowding.score}`
+    `[auto-signals] ${ticker} [${dataSource}]: Mom=${momentum.score} MR=${finalMeanReversion} Qual=${quality.score} Flow=${flow.score} Risk=${risk.score} Crowd=${crowding.score}`
   );
 
   return {
     momentum: momentum.score,
-    meanReversion: meanReversion.score,
+    meanReversion: finalMeanReversion,
     quality: quality.score,
     flow: flow.score,
     risk: risk.score,
@@ -301,6 +339,8 @@ export async function computeAutoSignals(ticker: string): Promise<AutoSignals | 
         flow: flow.data,
         risk: risk.data,
         crowding: crowding.data,
+        dataSource,
+        tvIndicators: tvIndicators || undefined,
       },
     },
   };

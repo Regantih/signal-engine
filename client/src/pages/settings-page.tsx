@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Mail,
   Send,
+  LineChart,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,6 +155,139 @@ function DigestPreview() {
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">No digest generated yet. Click "Generate Now" to create one.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface TVStatus {
+  connected: boolean;
+  message: string;
+  lastChecked: string;
+  version?: string;
+}
+
+function TradingViewMCPSection() {
+  const { toast } = useToast();
+
+  const { data: tvStatus, isLoading: tvLoading } = useQuery<TVStatus>({
+    queryKey: ["/api/tradingview/status"],
+    retry: false,
+    refetchInterval: 60000,
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/tradingview/test");
+      return res.json();
+    },
+    onSuccess: (data: TVStatus) => {
+      if (data.connected) {
+        toast({ title: "TradingView Connected", description: `MCP bridge active${data.version ? ` (v${data.version})` : ""}.` });
+      } else {
+        toast({ variant: "destructive", title: "Not Connected", description: data.message });
+      }
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "Test Failed", description: e.message });
+    },
+  });
+
+  return (
+    <div className="bg-card border border-card-border rounded-lg overflow-hidden" data-testid="tv-mcp-section">
+      <div className="p-4 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-md bg-purple-500/10 flex items-center justify-center">
+              <LineChart className="w-4 h-4 text-purple-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">TradingView MCP</h3>
+              <p className="text-xs text-muted-foreground">Real-time quotes, indicators & alerts via Chrome DevTools</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {tvLoading ? (
+              <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />
+            ) : tvStatus?.connected ? (
+              <span className="flex items-center gap-1 text-emerald-500 text-xs font-medium">
+                <CheckCircle className="w-4 h-4" />
+                Connected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-red-500 text-xs font-medium">
+                <XCircle className="w-4 h-4" />
+                Not Connected
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {tvStatus?.connected && (
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1 text-emerald-400">
+              <Zap className="w-3 h-3" />
+              Live data active
+            </span>
+            {tvStatus.version && (
+              <span className="text-muted-foreground">Version: v{tvStatus.version}</span>
+            )}
+            <span className="text-muted-foreground">
+              Checked: {new Date(tvStatus.lastChecked).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
+
+        <div className="text-xs text-muted-foreground/70 space-y-1.5">
+          <p className="flex items-center gap-1.5">
+            <Plug className="w-3 h-3" />
+            Connects to TradingView Desktop via Chrome DevTools Protocol (port 9222)
+          </p>
+          <p>
+            When connected, Signal Engine uses real-time TradingView prices instead of delayed Yahoo Finance data. HIGH conviction picks automatically create TradingView alerts.
+          </p>
+          <p className="font-medium text-muted-foreground/90">Setup:</p>
+          <ol className="list-decimal ml-4 space-y-0.5">
+            <li>
+              Install the MCP server from{" "}
+              <a
+                href="https://github.com/LewisWJackson/tradingview-mcp-jackson"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-0.5"
+              >
+                github.com/LewisWJackson/tradingview-mcp-jackson <ExternalLink className="w-3 h-3" />
+              </a>
+            </li>
+            <li>Launch TradingView Desktop with <code className="bg-muted px-1 rounded text-[10px]">--remote-debugging-port=9222</code></li>
+            <li>Ensure the <code className="bg-muted px-1 rounded text-[10px]">tv</code> CLI command is in your PATH</li>
+            <li>Click "Test Connection" below</li>
+          </ol>
+        </div>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => testMutation.mutate()}
+          disabled={testMutation.isPending}
+          data-testid="button-test-tv-connection"
+        >
+          {testMutation.isPending ? (
+            <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />
+          ) : (
+            <LineChart className="w-3 h-3 mr-1.5" />
+          )}
+          Test Connection
+        </Button>
+
+        {tvStatus && !tvStatus.connected && (
+          <p className="text-xs text-muted-foreground/60 flex items-center gap-1">
+            <XCircle className="w-3 h-3 text-muted-foreground/40" />
+            {tvStatus.message}
+          </p>
         )}
       </div>
     </div>
@@ -403,6 +538,9 @@ export default function SettingsPage() {
       {/* Daily Digest Preview */}
       <DigestPreview />
 
+      {/* TradingView MCP */}
+      <TradingViewMCPSection />
+
       {/* Future integrations */}
       <div className="bg-card border border-card-border rounded-lg p-4 opacity-60">
         <div className="flex items-center gap-3">
@@ -411,7 +549,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <h3 className="text-sm font-medium text-muted-foreground">More Integrations</h3>
-            <p className="text-xs text-muted-foreground/60">TradingView webhooks, live broker feeds, and more coming soon</p>
+            <p className="text-xs text-muted-foreground/60">Live broker feeds, advanced screener APIs, and more coming soon</p>
           </div>
         </div>
       </div>
