@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Switch, Route, Router } from "wouter";
+import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
+import { getAuthToken } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -22,6 +23,7 @@ import SettingsPage from "@/pages/settings-page";
 import Scanner from "@/pages/scanner";
 import Trading from "@/pages/trading";
 import Macro from "@/pages/macro";
+import Landing from "@/pages/landing";
 
 function AppRouter() {
   return (
@@ -38,6 +40,7 @@ function AppRouter() {
       <Route path="/market" component={Market} />
       <Route path="/news" component={News} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/score/:ticker" component={Landing} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -46,6 +49,7 @@ function AppRouter() {
 function AppContent() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [location] = useLocation();
 
   const { data: opportunities } = useQuery<any[]>({
     queryKey: ["/api/opportunities"],
@@ -63,6 +67,18 @@ function AppContent() {
     setShowOnboarding(!onboarded && !hasData);
     setOnboardingChecked(true);
   }, [opportunities]);
+
+  // Show landing page for /score/:ticker routes (always public, no sidebar)
+  const isScoreRoute = location.startsWith("/score/");
+
+  // Show landing page for logged-out users at root
+  const isLoggedOut = !getAuthToken();
+  const isRootRoute = location === "/" || location === "";
+  const showLanding = isScoreRoute || (isRootRoute && isLoggedOut);
+
+  if (showLanding) {
+    return <Landing />;
+  }
 
   if (!onboardingChecked) return null;
 
