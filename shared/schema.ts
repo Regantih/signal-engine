@@ -171,6 +171,33 @@ export const benzingaNews = sqliteTable("benzinga_news", {
   fetchedAt: text("fetched_at").notNull(),
 });
 
+// Watchlists
+export const watchlists = sqliteTable("watchlists", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+// Watchlist items
+export const watchlistItems = sqliteTable("watchlist_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  watchlistId: integer("watchlist_id").notNull(),
+  ticker: text("ticker").notNull(),
+  addedAt: text("added_at").notNull(),
+  notes: text("notes"),
+});
+
+// Notifications
+export const notifications = sqliteTable("notifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  type: text("type").notNull(), // sell_triggered, new_high_conviction, conviction_change, daily_summary
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  ticker: text("ticker"),
+  read: integer("read").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
 // App settings (key-value store for API keys etc)
 export const appSettings = sqliteTable("app_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -216,6 +243,9 @@ export const insertBenzingaNewsSchema = createInsertSchema(benzingaNews).omit({ 
 export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true });
 export const insertPaperPositionSchema = createInsertSchema(paperPositions).omit({ id: true });
 export const insertPaperOrderSchema = createInsertSchema(paperOrders).omit({ id: true });
+export const insertWatchlistSchema = createInsertSchema(watchlists).omit({ id: true });
+export const insertWatchlistItemSchema = createInsertSchema(watchlistItems).omit({ id: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true });
 
 // Types
 export type Opportunity = typeof opportunities.$inferSelect;
@@ -241,3 +271,9 @@ export type PaperPosition = typeof paperPositions.$inferSelect;
 export type InsertPaperPosition = z.infer<typeof insertPaperPositionSchema>;
 export type PaperOrder = typeof paperOrders.$inferSelect;
 export type InsertPaperOrder = z.infer<typeof insertPaperOrderSchema>;
+export type Watchlist = typeof watchlists.$inferSelect;
+export type InsertWatchlist = z.infer<typeof insertWatchlistSchema>;
+export type WatchlistItem = typeof watchlistItems.$inferSelect;
+export type InsertWatchlistItem = z.infer<typeof insertWatchlistItemSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
