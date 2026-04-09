@@ -95,7 +95,7 @@ export default function Weights() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-4 lg:p-6 space-y-4">
         {[...Array(4)].map((_, i) => (
           <Skeleton key={i} className="h-48 rounded-lg" />
         ))}
@@ -104,7 +104,7 @@ export default function Weights() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1200px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1200px]">
       <div>
         <h2 className="text-xl font-semibold">Weight Configuration</h2>
         <p className="text-sm text-muted-foreground mt-1">
@@ -112,7 +112,7 @@ export default function Weights() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
         {Object.entries(DOMAIN_LABELS).map(([domain, label]) => {
           const w = localWeights[domain] || { ...DEFAULTS };
           const totalWeight = Object.values(w).reduce((s, v) => s + v, 0);

@@ -466,7 +466,7 @@ export default function Trading() {
   };
 
   return (
-    <div className="p-6 max-w-[1100px] space-y-8">
+    <div className="p-4 lg:p-6 max-w-[1100px] space-y-6 lg:space-y-8">
       {/* Header */}
       <div>
         <div className="flex items-center gap-3">
@@ -480,7 +480,7 @@ export default function Trading() {
 
       {/* ── 0. Pipeline Control Panel ────────────────────── */}
       <section>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-2">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-primary" />
             <h3 className="text-sm font-semibold">Autonomous Pipeline</h3>
@@ -489,7 +489,7 @@ export default function Trading() {
             onClick={() => pipelineMutation.mutate()}
             disabled={pipelineMutation.isPending}
             data-testid="button-run-pipeline"
-            className="gap-1.5"
+            className="gap-1.5 w-full sm:w-auto min-h-[44px]"
           >
             {pipelineMutation.isPending ? (
               <RefreshCw className="w-3 h-3 animate-spin" />
@@ -558,7 +558,7 @@ export default function Trading() {
 
             {/* Pending approvals */}
             {pipelineResult.pendingApprovals.length > 0 && (
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
+              <div className="bg-card border border-border rounded-lg overflow-x-auto">
                 <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
                   <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
                   <h4 className="text-xs font-semibold">Pending Approvals ({pipelineResult.pendingApprovals.length})</h4>
@@ -733,7 +733,7 @@ export default function Trading() {
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-lg overflow-x-auto">
           {positionsLoading ? (
             <div className="p-4 space-y-2">
               {[...Array(3)].map((_, i) => (
@@ -896,7 +896,7 @@ export default function Trading() {
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-lg overflow-x-auto">
           {buyOpps.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No opportunities ready for execution. Score opportunities and mark as BUY to execute.
@@ -995,7 +995,7 @@ export default function Trading() {
           <h3 className="text-sm font-semibold">Recent Orders</h3>
         </div>
 
-        <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-lg overflow-x-auto">
           {ordersLoading ? (
             <div className="p-4 space-y-2">
               {[...Array(5)].map((_, i) => (

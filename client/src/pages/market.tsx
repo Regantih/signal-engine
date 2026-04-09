@@ -283,8 +283,8 @@ export default function Market() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="p-4 lg:p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
           {[...Array(3)].map((_, i) => (
             <Skeleton key={i} className="h-80 rounded-lg" />
           ))}
@@ -294,22 +294,23 @@ export default function Market() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1400px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Live Market</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Real-time TradingView charts for all tracked instruments
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
             size="sm"
             onClick={() => autoScoreAllMutation.mutate()}
             disabled={autoScoreAllMutation.isPending}
             data-testid="button-auto-score-all"
+            className="w-full sm:w-auto min-h-[44px]"
           >
             <Zap className={`w-3.5 h-3.5 mr-1.5 ${autoScoreAllMutation.isPending ? "animate-pulse" : ""}`} />
             {autoScoreAllMutation.isPending ? "Auto-Scoring..." : "Auto-Score All"}
@@ -322,7 +323,7 @@ export default function Market() {
         <>
           <div>
             <h3 className="text-sm font-medium text-muted-foreground mb-3">Public Markets</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
               {marketOpps.map((opp) => (
                 <MarketCard key={opp.id} opp={opp} />
               ))}

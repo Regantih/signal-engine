@@ -220,9 +220,9 @@ export default function Scanner() {
   const totalScreenerHits = scanData?.results.reduce((sum, r) => sum + r.screenerCount, 0) ?? 0;
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1400px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <Radar className="w-5 h-5 text-primary" />
@@ -235,7 +235,7 @@ export default function Scanner() {
         <Button
           onClick={() => scanMutation.mutate()}
           disabled={scanMutation.isPending}
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto min-h-[44px]"
           data-testid="button-scan-universe"
         >
           <Radar className={`w-4 h-4 ${scanMutation.isPending ? "animate-spin" : ""}`} />
@@ -258,31 +258,31 @@ export default function Scanner() {
       {/* Summary stats */}
       {scanData && !scanMutation.isPending && (
         <>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center min-w-[110px]">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center">
               <p className="text-2xl font-semibold tabular-nums">{scanData.totalHits}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Tickers Found</p>
             </div>
-            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center min-w-[110px]">
+            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center">
               <p className="text-2xl font-semibold tabular-nums">{totalScreenerHits}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Total Screener Hits</p>
             </div>
-            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center min-w-[110px]">
+            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center">
               <p className="text-2xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                 {scanData.results.filter((r) => r.isNew).length}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">New Opportunities</p>
             </div>
-            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center min-w-[110px]">
+            <div className="bg-card border border-card-border rounded-lg px-4 py-3 text-center">
               <p className="text-2xl font-semibold tabular-nums">
                 {scanData.results.filter((r) => r.screenerCount >= 2).length}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">Convergence Picks</p>
             </div>
-            <p className="text-xs text-muted-foreground ml-auto">
-              Scanned at {new Date(scanData.timestamp).toLocaleTimeString()}
-            </p>
           </div>
+          <p className="text-xs text-muted-foreground text-right">
+            Scanned at {new Date(scanData.timestamp).toLocaleTimeString()}
+          </p>
 
           {/* Results grid */}
           <div className="space-y-3">
@@ -303,7 +303,7 @@ export default function Scanner() {
                 data-testid={`card-scan-result-${result.ticker}`}
               >
                 {/* Header row */}
-                <div className="flex items-center justify-between p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     {/* Ticker + name */}
                     <div className="min-w-0">
@@ -332,12 +332,12 @@ export default function Scanner() {
                   </div>
 
                   {/* Track button */}
-                  <div className="shrink-0 ml-3">
+                  <div className="shrink-0 w-full sm:w-auto sm:ml-3">
                     {isTracked(result.ticker) ? (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800 gap-1.5 text-xs"
+                        className="text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800 gap-1.5 text-xs w-full sm:w-auto min-h-[44px]"
                         disabled
                         data-testid={`button-tracked-${result.ticker}`}
                       >
@@ -348,7 +348,7 @@ export default function Scanner() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="gap-1.5 text-xs"
+                        className="gap-1.5 text-xs w-full sm:w-auto min-h-[44px]"
                         onClick={() =>
                           trackMutation.mutate({
                             ticker: result.ticker,

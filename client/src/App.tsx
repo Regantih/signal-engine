@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppSidebar } from "@/components/app-sidebar";
+import { BottomNav } from "@/components/bottom-nav";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Opportunities from "@/pages/opportunities";
@@ -48,10 +49,13 @@ function App() {
           <Toaster />
           <Router hook={useHashLocation}>
             <div className="flex h-screen overflow-hidden">
-              <AppSidebar />
-              <main className="flex-1 overflow-y-auto">
+              <div className="hidden lg:block">
+                <AppSidebar />
+              </div>
+              <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
                 <AppRouter />
               </main>
+              <BottomNav />
             </div>
           </Router>
         </ThemeProvider>

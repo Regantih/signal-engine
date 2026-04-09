@@ -69,7 +69,7 @@ export default function Audit() {
 
   if (predsLoading) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-4 lg:p-6 space-y-4">
         {[...Array(5)].map((_, i) => (
           <Skeleton key={i} className="h-16 rounded-lg" />
         ))}
@@ -78,8 +78,8 @@ export default function Audit() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
-      <div className="flex items-center justify-between">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1400px]">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-semibold">Audit Trail</h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -151,7 +151,7 @@ export default function Audit() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-3 md:grid-cols-6 gap-3">
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3">
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Score</span>
                     <span className="text-xs tabular-nums font-mono font-medium">
