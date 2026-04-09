@@ -1,11 +1,13 @@
+import { useState, useEffect } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppSidebar } from "@/components/app-sidebar";
+import { Onboarding } from "@/components/onboarding";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Opportunities from "@/pages/opportunities";
@@ -40,6 +42,48 @@ function AppRouter() {
   );
 }
 
+function AppContent() {
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  const { data: opportunities } = useQuery<any[]>({
+    queryKey: ["/api/opportunities"],
+  });
+
+  useEffect(() => {
+    if (opportunities === undefined) return; // still loading
+
+    let onboarded = false;
+    try {
+      onboarded = localStorage.getItem("signalEngine_onboarded") === "true";
+    } catch { /* localStorage may be blocked */ }
+
+    const hasData = opportunities && opportunities.length > 0;
+    setShowOnboarding(!onboarded && !hasData);
+    setOnboardingChecked(true);
+  }, [opportunities]);
+
+  if (!onboardingChecked) return null;
+
+  return (
+    <>
+      {showOnboarding && (
+        <Onboarding onComplete={() => {
+          setShowOnboarding(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+        }} />
+      )}
+      <div className="flex h-screen overflow-hidden">
+        <AppSidebar />
+        <main className="flex-1 overflow-y-auto">
+          <AppRouter />
+        </main>
+      </div>
+    </>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -47,12 +91,7 @@ function App() {
         <ThemeProvider>
           <Toaster />
           <Router hook={useHashLocation}>
-            <div className="flex h-screen overflow-hidden">
-              <AppSidebar />
-              <main className="flex-1 overflow-y-auto">
-                <AppRouter />
-              </main>
-            </div>
+            <AppContent />
           </Router>
         </ThemeProvider>
       </TooltipProvider>

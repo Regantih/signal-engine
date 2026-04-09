@@ -18,6 +18,7 @@ import { captureCredentials } from "./credentials";
 import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
 import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysis";
 import { generateThesis } from "./ai-thesis";
+import { computePortfolioAnalytics } from "./portfolio-analytics";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -2111,6 +2112,130 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       res.json(obj);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // PORTFOLIO ANALYTICS
+  // ========================
+
+  app.get("/api/portfolio/analytics", async (_req, res) => {
+    try {
+      const analytics = await computePortfolioAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // WATCHLISTS
+  // ========================
+
+  app.get("/api/watchlists", async (_req, res) => {
+    try {
+      const lists = await storage.getWatchlists();
+      res.json(lists);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/watchlists", async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name) return res.status(400).json({ error: "name required" });
+      const watchlist = await storage.createWatchlist({ name, createdAt: new Date().toISOString() });
+      res.json(watchlist);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/watchlists/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const watchlist = await storage.getWatchlist(id);
+      if (!watchlist) return res.status(404).json({ error: "Not found" });
+      const items = await storage.getWatchlistItems(id);
+      res.json({ ...watchlist, items });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/watchlists/:id", async (req, res) => {
+    try {
+      await storage.deleteWatchlist(Number(req.params.id));
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/watchlists/:id/items", async (req, res) => {
+    try {
+      const watchlistId = Number(req.params.id);
+      const { ticker, notes } = req.body;
+      if (!ticker) return res.status(400).json({ error: "ticker required" });
+      const item = await storage.addWatchlistItem({
+        watchlistId,
+        ticker: ticker.toUpperCase(),
+        addedAt: new Date().toISOString(),
+        notes: notes || null,
+      });
+      res.json(item);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/watchlists/:id/items/:itemId", async (req, res) => {
+    try {
+      await storage.removeWatchlistItem(Number(req.params.itemId));
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // NOTIFICATIONS
+  // ========================
+
+  app.get("/api/notifications", async (_req, res) => {
+    try {
+      const list = await storage.getNotifications(50);
+      res.json(list);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", async (_req, res) => {
+    try {
+      const count = await storage.getUnreadNotificationCount();
+      res.json({ count });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    try {
+      await storage.markNotificationRead(Number(req.params.id));
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/notifications/read-all", async (_req, res) => {
+    try {
+      await storage.markAllNotificationsRead();
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 

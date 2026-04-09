@@ -328,6 +328,16 @@ async function runAutopilot(): Promise<void> {
               await executePaperTrade(pos.ticker, "SELL", pos.shares, currentPrice);
               console.log(`[autopilot] Auto-sold ${pos.ticker}: ${sellReason}`);
 
+              // Create sell notification
+              await storage.createNotification({
+                type: "sell_triggered",
+                title: `Sold: ${pos.ticker}`,
+                message: `${pos.ticker} sold at $${currentPrice.toFixed(2)} — ${sellReason}`,
+                ticker: pos.ticker,
+                read: 0,
+                createdAt: new Date().toISOString(),
+              });
+
               // Update opportunity status to "sell" if matched
               if (opp) {
                 await storage.updateOpportunity(opp.id, {
@@ -359,6 +369,66 @@ async function runAutopilot(): Promise<void> {
       await rescoreZeroSentimentArticles();
     } catch (e: any) {
       console.error(`[autopilot] Sentiment re-scoring error: ${e.message}`);
+    }
+
+    // ── Generate notifications ──
+    try {
+      const now = new Date().toISOString();
+      const freshOpps = await storage.getOpportunities();
+
+      // Track conviction changes and new high conviction picks
+      for (const opp of freshOpps) {
+        if (!opp.ticker || opp.domain !== "public_markets") continue;
+
+        // New high conviction opportunity
+        if (opp.convictionBand === "high" && opp.status === "buy") {
+          // Only notify if recently scored (within last cycle ~5 min)
+          const updatedAt = new Date(opp.updatedAt).getTime();
+          const fiveMinAgo = Date.now() - 6 * 60 * 1000;
+          if (updatedAt > fiveMinAgo) {
+            const existing = await storage.getNotifications(10);
+            const alreadyNotified = existing.some(n =>
+              n.type === "new_high_conviction" && n.ticker === opp.ticker?.toUpperCase() &&
+              new Date(n.createdAt).getTime() > fiveMinAgo
+            );
+            if (!alreadyNotified) {
+              await storage.createNotification({
+                type: "new_high_conviction",
+                title: `High Conviction: ${opp.ticker.toUpperCase()}`,
+                message: `${opp.name} scored High Conviction (${opp.compositeScore?.toFixed(3) || "N/A"})`,
+                ticker: opp.ticker.toUpperCase(),
+                read: 0,
+                createdAt: now,
+              });
+            }
+          }
+        }
+      }
+
+      // Daily summary notification (once per day)
+      const todayStr = new Date().toISOString().split("T")[0];
+      const recentNotifs = await storage.getNotifications(50);
+      const hasTodaySummary = recentNotifs.some(n =>
+        n.type === "daily_summary" && n.createdAt.startsWith(todayStr)
+      );
+
+      if (!hasTodaySummary) {
+        const buyCount = freshOpps.filter(o => o.status === "buy").length;
+        const portfolio = await storage.getPortfolio();
+        const pnl = portfolio?.totalPnl ?? 0;
+        await storage.createNotification({
+          type: "daily_summary",
+          title: "Daily Summary",
+          message: `Portfolio: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} P&L. ${buyCount} active positions. ${scored} tickers scored.`,
+          ticker: null,
+          read: 0,
+          createdAt: now,
+        });
+      }
+
+      console.log(`[autopilot] Notifications generated`);
+    } catch (e: any) {
+      console.error(`[autopilot] Notification error: ${e.message}`);
     }
   } catch (e: any) {
     console.error(`[autopilot] Error in autopilot cycle: ${e.message}`);

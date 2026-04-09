@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
+import { NotificationBell } from "./notification-bell";
 import {
   LayoutDashboard,
   Target,
@@ -87,18 +88,21 @@ export function AppSidebar() {
       <div className="p-3 border-t border-sidebar-border">
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs text-sidebar-foreground/40">$100 Budget</span>
-          <button
-            onClick={toggleTheme}
-            className="p-1.5 rounded-md hover:bg-sidebar-accent/50 transition-colors"
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            data-testid="button-theme-toggle"
-          >
-            {theme === "dark" ? (
-              <Sun className="w-4 h-4 text-sidebar-foreground/60" />
-            ) : (
-              <Moon className="w-4 h-4 text-sidebar-foreground/60" />
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-md hover:bg-sidebar-accent/50 transition-colors"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              data-testid="button-theme-toggle"
+            >
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4 text-sidebar-foreground/60" />
+              ) : (
+                <Moon className="w-4 h-4 text-sidebar-foreground/60" />
+              )}
+            </button>
+          </div>
         </div>
         <p className="text-[10px] text-sidebar-foreground/30 px-3 mt-1">
           Inspired by Renaissance Technologies

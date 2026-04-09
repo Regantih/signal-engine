@@ -9,6 +9,9 @@ import {
   type PublishedPrediction, type InsertPublishedPrediction, publishedPredictions,
   type BenzingaNews, type InsertBenzingaNews, benzingaNews,
   type AppSetting, type InsertAppSetting, appSettings,
+  type Watchlist, type InsertWatchlist, watchlists,
+  type WatchlistItem, type InsertWatchlistItem, watchlistItems,
+  type Notification, type InsertNotification, notifications,
   DEFAULT_WEIGHTS, DOMAINS,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -159,6 +162,30 @@ sqlite.exec(`
     key TEXT NOT NULL UNIQUE,
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS watchlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS watchlist_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watchlist_id INTEGER NOT NULL,
+    ticker TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    notes TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    ticker TEXT,
+    read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS paper_positions (
@@ -477,6 +504,58 @@ export class DatabaseStorage implements IStorage {
       ...s,
       value: this.isSensitiveKey(s.key) ? decrypt(s.value) : s.value,
     }));
+  }
+
+  // Watchlists
+  async getWatchlists(): Promise<Watchlist[]> {
+    return db.select().from(watchlists).orderBy(desc(watchlists.createdAt)).all();
+  }
+
+  async getWatchlist(id: number): Promise<Watchlist | undefined> {
+    return db.select().from(watchlists).where(eq(watchlists.id, id)).get();
+  }
+
+  async createWatchlist(data: InsertWatchlist): Promise<Watchlist> {
+    return db.insert(watchlists).values(data).returning().get();
+  }
+
+  async deleteWatchlist(id: number): Promise<void> {
+    db.delete(watchlistItems).where(eq(watchlistItems.watchlistId, id)).run();
+    db.delete(watchlists).where(eq(watchlists.id, id)).run();
+  }
+
+  async getWatchlistItems(watchlistId: number): Promise<WatchlistItem[]> {
+    return db.select().from(watchlistItems).where(eq(watchlistItems.watchlistId, watchlistId)).orderBy(desc(watchlistItems.addedAt)).all();
+  }
+
+  async addWatchlistItem(data: InsertWatchlistItem): Promise<WatchlistItem> {
+    return db.insert(watchlistItems).values(data).returning().get();
+  }
+
+  async removeWatchlistItem(id: number): Promise<void> {
+    db.delete(watchlistItems).where(eq(watchlistItems.id, id)).run();
+  }
+
+  // Notifications
+  async getNotifications(limit = 50): Promise<Notification[]> {
+    return db.select().from(notifications).orderBy(desc(notifications.createdAt)).limit(limit).all();
+  }
+
+  async getUnreadNotificationCount(): Promise<number> {
+    const result = db.select({ count: sql<number>`count(*)` }).from(notifications).where(eq(notifications.read, 0)).get();
+    return result?.count ?? 0;
+  }
+
+  async createNotification(data: InsertNotification): Promise<Notification> {
+    return db.insert(notifications).values(data).returning().get();
+  }
+
+  async markNotificationRead(id: number): Promise<void> {
+    db.update(notifications).set({ read: 1 }).where(eq(notifications.id, id)).run();
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    db.update(notifications).set({ read: 1 }).where(eq(notifications.read, 0)).run();
   }
 }
 
