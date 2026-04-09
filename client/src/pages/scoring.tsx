@@ -19,7 +19,7 @@ export default function Scoring() {
   const result = scoreLocally(signals, weights);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1200px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1200px]">
       <div>
         <h2 className="text-xl font-semibold">Live Scoring Sandbox</h2>
         <p className="text-sm text-muted-foreground mt-1">
@@ -27,9 +27,9 @@ export default function Scoring() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Signal Inputs */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1 space-y-4 lg:space-y-6">
           <div className="bg-card border border-card-border rounded-lg p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium">Signal Inputs</h3>

@@ -199,7 +199,7 @@ export default function Opportunities() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-4 lg:p-6 space-y-4">
         {[...Array(3)].map((_, i) => (
           <Skeleton key={i} className="h-20 rounded-lg" />
         ))}
@@ -208,9 +208,9 @@ export default function Opportunities() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1400px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Opportunities</h2>
           <p className="text-sm text-muted-foreground mt-1">

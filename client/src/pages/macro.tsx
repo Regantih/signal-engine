@@ -400,9 +400,9 @@ export default function MacroPage() {
   const anyFetching = isFetching || intelFetching;
 
   return (
-    <div className="p-6 space-y-6 min-h-screen">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 min-h-screen">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Globe className="w-6 h-6 text-primary" />
           <div>
@@ -421,7 +421,7 @@ export default function MacroPage() {
           onClick={handleRefresh}
           disabled={anyFetching}
           data-testid="button-refresh-macro"
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto min-h-[44px]"
         >
           <RefreshCw className={`w-4 h-4 ${anyFetching ? "animate-spin" : ""}`} />
           Refresh All

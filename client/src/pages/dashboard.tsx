@@ -214,8 +214,8 @@ export default function Dashboard() {
 
   if (statsLoading || oppsLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
           {[...Array(4)].map((_, i) => (
             <Skeleton key={i} className="h-24 rounded-lg" />
           ))}
@@ -228,9 +228,9 @@ export default function Dashboard() {
   const portfolio = stats?.portfolio;
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1400px]">
       {/* Real-time Status Bar */}
-      <div className="flex items-center justify-between px-1 py-2 border-b border-border/30 mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-1 py-2 border-b border-border/30 mb-4 gap-2">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} data-testid="status-realtime-connection" />
           <span className="text-[10px] text-muted-foreground">
@@ -243,7 +243,7 @@ export default function Dashboard() {
           )}
         </div>
         {/* Ticker tape */}
-        <div className="flex items-center gap-3 overflow-x-auto" data-testid="ticker-tape">
+        <div className="flex items-center gap-3 overflow-x-auto w-full sm:w-auto" data-testid="ticker-tape">
           {Object.entries(prices).slice(0, 8).map(([symbol, data]) => (
             <div key={symbol} className="flex items-center gap-1 shrink-0">
               <span className="text-[10px] font-mono text-muted-foreground">{symbol}</span>
@@ -287,7 +287,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 lg:gap-4">
         <KpiCard
           label="Opportunities"
           value={stats?.totalOpportunities || 0}
@@ -322,7 +322,7 @@ export default function Dashboard() {
       </div>
 
       {/* Domain & Conviction Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         {/* Domain Distribution */}
         <div className="bg-card border border-card-border rounded-lg p-4">
           <h3 className="text-sm font-medium mb-3">By Domain</h3>

@@ -155,9 +155,9 @@ export default function News() {
   const regularNews = news.filter(n => n.isWiim !== 1);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1200px]">
+    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1200px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
             <Newspaper className="w-5 h-5 text-primary" />
@@ -173,6 +173,7 @@ export default function News() {
           onClick={() => refreshMutation.mutate()}
           disabled={refreshMutation.isPending}
           data-testid="button-refresh-news"
+          className="w-full sm:w-auto min-h-[44px]"
         >
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
           {refreshMutation.isPending ? "Fetching..." : "Fetch News"}
