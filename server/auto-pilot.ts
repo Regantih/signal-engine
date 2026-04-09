@@ -9,8 +9,10 @@ import { fetchOHLCV } from "./market-data-provider";
 import { fetchBenzingaNews, rescoreZeroSentimentArticles } from "./benzinga-service";
 import { executePaperTrade, getPaperPositions } from "./paper-trading";
 import { isAlpacaConnected } from "./alpaca-service";
-import { generateThesis } from "./ai-thesis";
+import { generateThesis, generateThesisWithWiki } from "./ai-thesis";
 import { resolveOldPredictions } from "./prediction-resolver";
+import { updateTickerPage, recordPredictionOutcome, recordMacroObservation, type TickerPageData } from "./wiki-engine";
+import { fetchMacroSnapshot } from "./macro-monitor";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -90,7 +92,7 @@ async function autoScoreTicker(ticker: string): Promise<boolean> {
       risk: signals.risk,
       crowding: signals.crowding,
     };
-    const thesis = generateThesis(scoredOpp as any, signals);
+    const thesis = await generateThesisWithWiki(scoredOpp as any, signals);
 
     await storage.updateOpportunity(opp.id, {
       compositeScore: result.compositeScore,
@@ -488,6 +490,76 @@ async function runAutopilot(): Promise<void> {
       await rescoreZeroSentimentArticles();
     } catch (e: any) {
       console.error(`[autopilot] Sentiment re-scoring error: ${e.message}`);
+    }
+
+    // ── Wiki: Update ticker pages for top scored opportunities ──
+    try {
+      const wikiOpps = await storage.getOpportunities();
+      const topOpps = wikiOpps
+        .filter(o => o.domain === "public_markets" && o.ticker && o.compositeScore != null)
+        .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0))
+        .slice(0, 10);
+
+      let wikiUpdated = 0;
+      for (const opp of topOpps) {
+        try {
+          const predictions = await storage.getPredictions();
+          const oppPreds = predictions
+            .filter((p: any) => p.opportunityId === opp.id)
+            .slice(-10)
+            .map((p: any) => ({
+              date: p.timestamp?.split("T")[0] || "N/A",
+              action: p.action,
+              entry: p.entryPrice,
+              target: p.targetPrice,
+              stop: p.stopLoss,
+              outcome: "PENDING",
+              pnl: "—",
+            }));
+
+          const data: TickerPageData = {
+            ticker: opp.ticker!,
+            compositeScore: opp.compositeScore,
+            convictionBand: opp.convictionBand,
+            entryPrice: opp.entryPrice,
+            targetPrice: opp.targetPrice,
+            stopLoss: opp.stopLoss,
+            momentum: opp.momentum,
+            meanReversion: opp.meanReversion,
+            quality: opp.quality,
+            flow: opp.flow,
+            risk: opp.risk,
+            crowding: opp.crowding,
+            thesis: (opp as any).thesis || null,
+            predictions: oppPreds,
+          };
+
+          await updateTickerPage(opp.ticker!, data);
+          wikiUpdated++;
+        } catch (e: any) {
+          console.error(`[autopilot] Wiki update failed for ${opp.ticker}: ${e.message}`);
+        }
+      }
+      console.log(`[autopilot] Wiki: Updated ${wikiUpdated} ticker pages`);
+    } catch (e: any) {
+      console.error(`[autopilot] Wiki ticker-page error: ${e.message}`);
+    }
+
+    // ── Wiki: Record macro regime observation ──
+    try {
+      const macroSnap = await fetchMacroSnapshot();
+      if (macroSnap) {
+        await recordMacroObservation(macroSnap.regime, {
+          vix: macroSnap.vix ? { value: macroSnap.vix.value, signal: macroSnap.vix.signal } : undefined,
+          sp500: macroSnap.sp500 ? { value: macroSnap.sp500.value, change: macroSnap.sp500.change } : undefined,
+          yield10y: macroSnap.yield10y ? { value: macroSnap.yield10y.value } : undefined,
+          dxy: macroSnap.dxy ? { value: macroSnap.dxy.value } : undefined,
+          sentiment: macroSnap.sentiment,
+        });
+        console.log(`[autopilot] Wiki: Recorded ${macroSnap.regime} macro observation`);
+      }
+    } catch (e: any) {
+      console.error(`[autopilot] Wiki macro error: ${e.message}`);
     }
 
     // ── Generate notifications ──

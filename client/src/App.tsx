@@ -26,6 +26,7 @@ import Macro from "@/pages/macro";
 import Accountability from "@/pages/accountability";
 import Landing from "@/pages/landing";
 import Leaderboard from "@/pages/leaderboard";
+import WikiPage from "@/pages/wiki";
 
 function AppRouter() {
   return (
@@ -43,6 +44,7 @@ function AppRouter() {
       <Route path="/market" component={Market} />
       <Route path="/news" component={News} />
       <Route path="/leaderboard" component={Leaderboard} />
+      <Route path="/wiki" component={WikiPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/score/:ticker" component={Landing} />
       <Route component={NotFound} />

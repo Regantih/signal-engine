@@ -23,6 +23,7 @@ import { generateThesis } from "./ai-thesis";
 import { resolveOldPredictions } from "./prediction-resolver";
 import { computePortfolioAnalytics } from "./portfolio-analytics";
 import { getTVConnectionStatus, getMorningBrief, clearTVCache } from "./tradingview-bridge";
+import { readIndexContent, readTickerPage, queryWiki, listWikiPages, lintWiki, readLogContent, readPatternPage, readMacroPage } from "./wiki-engine";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -2612,6 +2613,7 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
   });
 
   // ========================
+<<<<<<< HEAD
   // TRADINGVIEW MCP
   // ========================
 
@@ -2679,6 +2681,107 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+=======
+  // RESEARCH WIKI
+  // ========================
+
+  // GET /api/wiki — Returns wiki index content
+  app.get("/api/wiki", (_req, res) => {
+    try {
+      const content = readIndexContent();
+      res.json({ content });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/pages — List all wiki pages by category
+  app.get("/api/wiki/pages", (_req, res) => {
+    try {
+      const pages = listWikiPages();
+      res.json(pages);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/log — Returns wiki log content
+  app.get("/api/wiki/log", (_req, res) => {
+    try {
+      const content = readLogContent();
+      res.json({ content });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/ticker/:ticker — Returns ticker wiki page
+  app.get("/api/wiki/ticker/:ticker", (req, res) => {
+    try {
+      const { ticker } = req.params;
+      if (!ticker || ticker.length > 10) {
+        return res.status(400).json({ error: "Invalid ticker" });
+      }
+      const content = readTickerPage(ticker);
+      if (!content) {
+        return res.status(404).json({ error: `No wiki page for ${ticker.toUpperCase()}` });
+      }
+      res.json({ ticker: ticker.toUpperCase(), content });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/pattern/:slug — Returns pattern wiki page
+  app.get("/api/wiki/pattern/:slug", (req, res) => {
+    try {
+      const { slug } = req.params;
+      const content = readPatternPage(slug);
+      if (!content) {
+        return res.status(404).json({ error: `No wiki page for pattern: ${slug}` });
+      }
+      res.json({ pattern: slug, content });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/macro/:slug — Returns macro observation wiki page
+  app.get("/api/wiki/macro/:slug", (req, res) => {
+    try {
+      const { slug } = req.params;
+      const content = readMacroPage(slug);
+      if (!content) {
+        return res.status(404).json({ error: `No wiki page for macro: ${slug}` });
+      }
+      res.json({ macro: slug, content });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/wiki/query — Search wiki pages for relevant content
+  app.post("/api/wiki/query", async (req, res) => {
+    try {
+      const { q } = req.body;
+      if (!q || typeof q !== "string") {
+        return res.status(400).json({ error: "Query string 'q' required" });
+      }
+      const result = await queryWiki(q);
+      res.json({ query: q, result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/wiki/lint — Run wiki lint pass
+  app.get("/api/wiki/lint", async (_req, res) => {
+    try {
+      const issues = await lintWiki();
+      res.json({ issues });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+>>>>>>> origin/feature/research-wiki
     }
   });
 

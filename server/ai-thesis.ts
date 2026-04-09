@@ -6,6 +6,7 @@
  */
 
 import type { Opportunity } from "@shared/schema";
+import { getThesisContext } from "./wiki-engine";
 
 interface SignalSnapshot {
   momentum: number;
@@ -187,7 +188,7 @@ function actionRecommendation(opp: Opportunity): string {
   return "Watch. Wait for momentum confirmation before entry.";
 }
 
-export function generateThesis(opp: Opportunity, signalSnapshot?: SignalSnapshot | null): string {
+export function generateThesis(opp: Opportunity, signalSnapshot?: SignalSnapshot | null, wikiContext?: string): string {
   // Build signals from opportunity if no snapshot provided
   const signals: SignalSnapshot = signalSnapshot || {
     momentum: opp.momentum,
@@ -236,8 +237,28 @@ export function generateThesis(opp: Opportunity, signalSnapshot?: SignalSnapshot
   const posDesc = describePositionSizing(opp);
   if (posDesc) sections.push(posDesc);
 
-  // 7. Action recommendation
+  // 7. Wiki historical context
+  if (wikiContext && wikiContext.length > 0) {
+    sections.push(wikiContext);
+  }
+
+  // 8. Action recommendation
   sections.push(actionRecommendation(opp));
 
   return sections.join(" ");
+}
+
+/**
+ * Generate thesis with wiki context (async version).
+ * Fetches wiki history for the ticker before generating.
+ */
+export async function generateThesisWithWiki(opp: Opportunity, signalSnapshot?: SignalSnapshot | null): Promise<string> {
+  let wikiCtx = "";
+  try {
+    const ticker = opp.ticker || opp.name;
+    wikiCtx = await getThesisContext(ticker);
+  } catch {
+    // Wiki context is optional — continue without it
+  }
+  return generateThesis(opp, signalSnapshot, wikiCtx);
 }
