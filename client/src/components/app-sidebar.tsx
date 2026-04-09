@@ -16,6 +16,7 @@ import {
   Radar,
   Wallet,
   Globe,
+  Scale,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { path: "/opportunities", label: "Opportunities", icon: Target },
   { path: "/scoring", label: "Live Scoring", icon: Activity },
   { path: "/news", label: "News", icon: Newspaper },
+  { path: "/accountability", label: "Accountability", icon: Scale },
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
   { path: "/weights", label: "Weights", icon: Settings },

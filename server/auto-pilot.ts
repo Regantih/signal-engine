@@ -8,6 +8,7 @@ import { fetchBenzingaNews, rescoreZeroSentimentArticles } from "./benzinga-serv
 import { executePaperTrade, getPaperPositions } from "./paper-trading";
 import { isAlpacaConnected } from "./alpaca-service";
 import { generateThesis } from "./ai-thesis";
+import { resolveOldPredictions } from "./prediction-resolver";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -353,6 +354,17 @@ async function runAutopilot(): Promise<void> {
       }
     } catch (e: any) {
       console.error(`[autopilot] Sell-check error: ${e.message}`);
+    }
+
+    // Resolve old predictions (accountability ledger)
+    try {
+      console.log("[autopilot] Resolving old predictions...");
+      const resolutions = await resolveOldPredictions();
+      if (resolutions.length > 0) {
+        console.log(`[autopilot] Resolved ${resolutions.length} predictions`);
+      }
+    } catch (e: any) {
+      console.error(`[autopilot] Resolver error: ${e.message}`);
     }
 
     // Auto-seed price history for all tracked tickers

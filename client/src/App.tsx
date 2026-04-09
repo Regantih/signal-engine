@@ -22,6 +22,7 @@ import SettingsPage from "@/pages/settings-page";
 import Scanner from "@/pages/scanner";
 import Trading from "@/pages/trading";
 import Macro from "@/pages/macro";
+import Accountability from "@/pages/accountability";
 
 function AppRouter() {
   return (
@@ -33,6 +34,7 @@ function AppRouter() {
       <Route path="/opportunities" component={Opportunities} />
       <Route path="/scoring" component={Scoring} />
       <Route path="/audit" component={Audit} />
+      <Route path="/accountability" component={Accountability} />
       <Route path="/performance" component={PerformancePage} />
       <Route path="/weights" component={Weights} />
       <Route path="/market" component={Market} />

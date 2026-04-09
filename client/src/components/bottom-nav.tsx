@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Settings,
   Sliders,
+  Scale,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -29,6 +30,7 @@ const MORE_NAV = [
   { path: "/opportunities", label: "Opportunities", icon: Target },
   { path: "/scoring", label: "Live Scoring", icon: Activity },
   { path: "/news", label: "News", icon: Newspaper },
+  { path: "/accountability", label: "Accountability", icon: Scale },
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
   { path: "/weights", label: "Weights", icon: Settings },

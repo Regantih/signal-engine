@@ -80,6 +80,12 @@ export const predictions = sqliteTable("predictions", {
   reasoning: text("reasoning"),
   signalSnapshot: text("signal_snapshot").notNull(), // JSON of all signal values at time of prediction
   timestamp: text("timestamp").notNull(), // ISO string - immutable audit
+  // Accountability ledger fields
+  resolvedAt: text("resolved_at"), // ISO string when prediction was resolved
+  resolvedPrice: real("resolved_price"), // price at resolution time
+  actualReturn: real("actual_return"), // percentage return
+  wasCorrect: integer("was_correct"), // 1 = win, 0 = open, -1 = loss
+  resolutionNotes: text("resolution_notes"), // human-readable explanation
 });
 
 // Performance tracking

@@ -227,6 +227,17 @@ try {
   // Column already exists — ignore
 }
 
+// Migrate: add accountability ledger columns to predictions
+for (const col of [
+  "ALTER TABLE predictions ADD COLUMN resolved_at TEXT",
+  "ALTER TABLE predictions ADD COLUMN resolved_price REAL",
+  "ALTER TABLE predictions ADD COLUMN actual_return REAL",
+  "ALTER TABLE predictions ADD COLUMN was_correct INTEGER",
+  "ALTER TABLE predictions ADD COLUMN resolution_notes TEXT",
+]) {
+  try { sqlite.exec(col); } catch (_e) { /* Column already exists */ }
+}
+
 // Seed default weights if empty
 const existingWeights = db.select().from(weightConfig).all();
 if (existingWeights.length === 0) {
@@ -269,6 +280,7 @@ export interface IStorage {
   // Predictions
   getPredictions(opportunityId?: number): Promise<Prediction[]>;
   createPrediction(pred: InsertPrediction): Promise<Prediction>;
+  updatePrediction(id: number, data: Partial<Prediction>): Promise<Prediction | undefined>;
 
   // Performance
   getPerformance(opportunityId?: number): Promise<Performance[]>;
@@ -341,6 +353,10 @@ export class DatabaseStorage implements IStorage {
 
   async createPrediction(pred: InsertPrediction): Promise<Prediction> {
     return db.insert(predictions).values(pred).returning().get();
+  }
+
+  async updatePrediction(id: number, data: Partial<Prediction>): Promise<Prediction | undefined> {
+    return db.update(predictions).set(data).where(eq(predictions.id, id)).returning().get();
   }
 
   async getPerformance(opportunityId?: number): Promise<Performance[]> {

@@ -18,6 +18,7 @@ import { captureCredentials } from "./credentials";
 import { startRealtime, stopRealtime, addClient, removeClient, getRealtimeStatus } from "./realtime-engine";
 import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysis";
 import { generateThesis } from "./ai-thesis";
+import { resolveOldPredictions } from "./prediction-resolver";
 import { computePortfolioAnalytics } from "./portfolio-analytics";
 
 // In-memory rate limiter
@@ -730,6 +731,73 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
     try {
       const published = await storage.getPublishedPredictions();
       res.json(published);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // ACCOUNTABILITY LEDGER
+  // ========================
+
+  // GET /api/accountability - Full prediction ledger with win/loss stats
+  app.get("/api/accountability", async (_req, res) => {
+    try {
+      const allPreds = await storage.getPredictions();
+      const opps = await storage.getOpportunities();
+
+      const ledger = allPreds
+        .filter(p => p.action === "BUY" && p.entryPrice)
+        .map(p => {
+          const opp = opps.find(o => o.id === p.opportunityId);
+          return {
+            id: p.id,
+            ticker: opp?.ticker || "N/A",
+            action: p.action,
+            entryPrice: p.entryPrice,
+            targetPrice: p.targetPrice,
+            stopLoss: p.stopLoss,
+            compositeScore: p.compositeScore,
+            probabilityOfSuccess: p.probabilityOfSuccess,
+            convictionBand: p.convictionBand,
+            timestamp: p.timestamp,
+            resolvedAt: p.resolvedAt,
+            resolvedPrice: p.resolvedPrice,
+            actualReturn: p.actualReturn,
+            wasCorrect: p.wasCorrect,
+            resolutionNotes: p.resolutionNotes,
+          };
+        });
+
+      const resolved = ledger.filter(l => l.wasCorrect !== null && l.wasCorrect !== undefined);
+      const wins = resolved.filter(l => l.wasCorrect === 1);
+      const losses = resolved.filter(l => l.wasCorrect === -1);
+      const open = ledger.filter(l => l.wasCorrect === null || l.wasCorrect === undefined);
+
+      const avgReturnWins = wins.length > 0
+        ? wins.reduce((s, l) => s + (l.actualReturn || 0), 0) / wins.length
+        : 0;
+      const avgReturnLosses = losses.length > 0
+        ? losses.reduce((s, l) => s + (l.actualReturn || 0), 0) / losses.length
+        : 0;
+      const overallAlpha = resolved.length > 0
+        ? resolved.reduce((s, l) => s + (l.actualReturn || 0), 0) / resolved.length
+        : 0;
+
+      res.json({
+        stats: {
+          totalPredictions: ledger.length,
+          resolved: resolved.length,
+          wins: wins.length,
+          losses: losses.length,
+          open: open.length,
+          winRate: resolved.length > 0 ? Math.round((wins.length / resolved.length) * 1000) / 10 : 0,
+          avgReturnWins: Math.round(avgReturnWins * 100) / 100,
+          avgReturnLosses: Math.round(avgReturnLosses * 100) / 100,
+          overallAlpha: Math.round(overallAlpha * 100) / 100,
+        },
+        ledger,
+      });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

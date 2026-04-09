@@ -4,6 +4,7 @@ import { computeAutoSignals } from "./auto-signals";
 import { scoreOpportunity, suggestAction, computePriceLevels } from "./scoring-engine";
 import { evaluatePosition, evaluatePortfolioRisk, convictionSize, type Position } from "./risk-manager";
 import { fetchMacroSnapshot } from "./macro-monitor";
+import { resolveOldPredictions } from "./prediction-resolver";
 import { DEFAULT_WEIGHTS } from "@shared/schema";
 
 // Cost tracking
@@ -252,7 +253,16 @@ export async function runDailyPipeline(): Promise<PipelineResult> {
     } catch (e: any) { console.error(`Score failed for ${opp.ticker}:`, e.message); }
   }
 
-  // Phase 5: Capital state
+  // Phase 5: Resolve old predictions (accountability ledger)
+  console.log("[pipeline] Phase 5: Resolving predictions...");
+  try {
+    const resolutions = await resolveOldPredictions();
+    if (resolutions.length > 0) {
+      console.log(`[pipeline] Resolved ${resolutions.length} predictions`);
+    }
+  } catch (e: any) { console.error("[pipeline] Resolver error:", e.message); }
+
+  // Phase 6: Capital state
   const capitalState = await computeCapitalState();
 
   const pipelineResult: PipelineResult = {
