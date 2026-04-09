@@ -15,6 +15,7 @@ import {
   Settings,
   Sliders,
   Scale,
+  BookOpen,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -35,6 +36,7 @@ const MORE_NAV = [
   { path: "/audit", label: "Audit Trail", icon: History },
   { path: "/performance", label: "Performance", icon: TrendingUp },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { path: "/wiki", label: "Wiki", icon: BookOpen },
   { path: "/weights", label: "Weights", icon: Settings },
   { path: "/settings", label: "Settings", icon: Sliders },
 ];

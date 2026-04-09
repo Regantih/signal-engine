@@ -11,6 +11,8 @@ import { executePaperTrade, getPaperPositions } from "./paper-trading";
 import { isAlpacaConnected } from "./alpaca-service";
 import { generateThesis } from "./ai-thesis";
 import { resolveOldPredictions } from "./prediction-resolver";
+import { updateTickerPage, recordMacroRegime } from "./wiki-engine";
+import { fetchMacroSnapshot } from "./macro-monitor";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 10 * 1000; // 10 seconds
@@ -488,6 +490,42 @@ async function runAutopilot(): Promise<void> {
       await rescoreZeroSentimentArticles();
     } catch (e: any) {
       console.error(`[autopilot] Sentiment re-scoring error: ${e.message}`);
+    }
+
+    // ── Update Research Wiki ──
+    try {
+      const wikiOpps = await storage.getOpportunities();
+      const topScoredOpps = wikiOpps
+        .filter(o => o.domain === "public_markets" && o.ticker && o.compositeScore != null)
+        .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0))
+        .slice(0, 20);
+
+      let wikiUpdated = 0;
+      for (const opp of topScoredOpps) {
+        try {
+          await updateTickerPage(opp.ticker!, opp);
+          wikiUpdated++;
+        } catch (e: any) {
+          console.error(`[autopilot] Wiki update failed for ${opp.ticker}: ${e.message}`);
+        }
+      }
+
+      // Record macro regime
+      try {
+        const macro = await fetchMacroSnapshot();
+        await recordMacroRegime(
+          macro.regime,
+          macro.vix.value,
+          macro.sp500.change,
+          macro.summary,
+        );
+      } catch (e: any) {
+        console.error(`[autopilot] Wiki macro update error: ${e.message}`);
+      }
+
+      console.log(`[autopilot] Wiki updated: ${wikiUpdated} ticker pages + macro regime`);
+    } catch (e: any) {
+      console.error(`[autopilot] Wiki update error: ${e.message}`);
     }
 
     // ── Generate notifications ──

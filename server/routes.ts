@@ -22,6 +22,7 @@ import { fetchFundamentals, fetchFundamentalsBatch } from "./fundamental-analysi
 import { generateThesis } from "./ai-thesis";
 import { resolveOldPredictions } from "./prediction-resolver";
 import { computePortfolioAnalytics } from "./portfolio-analytics";
+import { getWikiIndex, getTickerPage, queryWiki, getWikiLog } from "./wiki-engine";
 
 // In-memory rate limiter
 const rateLimiter = {
@@ -2565,6 +2566,50 @@ Methodology: Renaissance-style multi-signal aggregation with Z-score normalizati
         createdAt: new Date().toISOString(),
       });
       res.json(digest);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================
+  // RESEARCH WIKI
+  // ========================
+
+  app.get("/api/wiki", async (_req, res) => {
+    try {
+      const index = await getWikiIndex();
+      res.json({ content: index });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/wiki/ticker/:ticker", async (req, res) => {
+    try {
+      const ticker = req.params.ticker.toUpperCase();
+      const page = await getTickerPage(ticker);
+      if (!page) return res.status(404).json({ error: `No wiki page for ${ticker}` });
+      res.json({ ticker, content: page });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/wiki/query", async (req, res) => {
+    try {
+      const { q } = req.body;
+      if (!q || typeof q !== "string") return res.status(400).json({ error: "Query string 'q' is required" });
+      const result = await queryWiki(q);
+      res.json({ query: q, result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/wiki/log", async (_req, res) => {
+    try {
+      const log = await getWikiLog(50);
+      res.json({ content: log });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

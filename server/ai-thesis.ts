@@ -6,6 +6,7 @@
  */
 
 import type { Opportunity } from "@shared/schema";
+import { getThesisContext } from "./wiki-engine";
 
 interface SignalSnapshot {
   momentum: number;
@@ -187,6 +188,28 @@ function actionRecommendation(opp: Opportunity): string {
   return "Watch. Wait for momentum confirmation before entry.";
 }
 
+function describeWikiContext(wikiContext: string): string {
+  if (!wikiContext || wikiContext.trim().length < 20) return "";
+
+  const parts: string[] = [];
+
+  // Extract prediction history stats from wiki
+  const historyRows = wikiContext.match(/\| \d{4}-\d{2}-\d{2} \| (BUY|SELL|WATCH) \|/g);
+  if (historyRows && historyRows.length > 1) {
+    parts.push(`Wiki history: ${historyRows.length} prior predictions tracked.`);
+  }
+
+  // Check for macro regime context
+  const regimeMatch = wikiContext.match(/\| \d{4}-\d{2}-\d{2}[^|]*\| (NEUTRAL|BULLISH|BEARISH|CRISIS) \|/g);
+  if (regimeMatch && regimeMatch.length > 0) {
+    const latest = regimeMatch[regimeMatch.length - 1];
+    const regime = latest.match(/(NEUTRAL|BULLISH|BEARISH|CRISIS)/)?.[1];
+    if (regime) parts.push(`Current macro regime: ${regime}.`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : "";
+}
+
 export function generateThesis(opp: Opportunity, signalSnapshot?: SignalSnapshot | null): string {
   // Build signals from opportunity if no snapshot provided
   const signals: SignalSnapshot = signalSnapshot || {
@@ -238,6 +261,22 @@ export function generateThesis(opp: Opportunity, signalSnapshot?: SignalSnapshot
 
   // 7. Action recommendation
   sections.push(actionRecommendation(opp));
+
+  // 8. Wiki historical context (if available)
+  if (opp.ticker) {
+    try {
+      // Synchronously check for wiki context — getThesisContext is async
+      // but we read the file directly for synchronous thesis generation
+      const fs = require("fs");
+      const path = require("path");
+      const tickerPath = path.resolve("autoresearch/wiki/pages/tickers", `${opp.ticker.toUpperCase()}.md`);
+      if (fs.existsSync(tickerPath)) {
+        const wikiContent = fs.readFileSync(tickerPath, "utf-8");
+        const ctx = describeWikiContext(wikiContent);
+        if (ctx) sections.push(ctx);
+      }
+    } catch { /* wiki context is optional */ }
+  }
 
   return sections.join(" ");
 }
