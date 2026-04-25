@@ -10,21 +10,26 @@
   </head>
   <body>
     <script>
+      // Compute the backend proxy base URL from the current page location.
+      // When deployed, the app is served from a URL like:
+      //   https://host/.../signal-engine/dist/public/index.html
+      // The backend proxy lives at:
+      //   https://host/.../signal-engine/port/5000
+      // In local dev (localhost) we use empty string so relative URLs work.
       (function() {
-        var raw = "__PORT_5000__";
-        if (raw && raw !== "__PORT_5000__") {
-          // Deployed: compute absolute URL by going up from current path to proxy root
-          // Current page: https://host/...proxy.../dist/public/index.html
-          // We need:      https://host/...proxy.../port/5000/
-          var loc = window.location.href;
-          var idx = loc.indexOf('/dist/public');
-          if (idx !== -1) {
-            window.__API_BASE__ = loc.substring(0, idx) + '/' + raw;
-          } else {
-            window.__API_BASE__ = raw;
-          }
+        var loc = window.location.href;
+        var isLocal = loc.indexOf('localhost') !== -1 || loc.indexOf('127.0.0.1') !== -1;
+        if (isLocal) {
+          window.__API_BASE__ = '';
+          return;
+        }
+        // Strip everything from /dist/public onwards, then append /port/5000
+        var idx = loc.indexOf('/dist/public');
+        if (idx !== -1) {
+          window.__API_BASE__ = loc.substring(0, idx) + '/port/5000';
         } else {
-          window.__API_BASE__ = "";
+          // Fallback: go up two path levels from the page URL
+          window.__API_BASE__ = loc.replace(/\/[^\/]*\/[^\/]*$/, '') + '/port/5000';
         }
       })();
     </script>

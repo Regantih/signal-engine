@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const API_BASE = ".";
+function getApiBase(): string {
+  const base = (typeof window !== "undefined") ? (window as any).__API_BASE__ : "";
+  return (base && base !== "__PORT_5000__") ? base : "";
+}
 
 interface PriceData {
   price: number;
@@ -38,7 +41,7 @@ export function useRealtime() {
 
   useEffect(() => {
     // Connect to SSE stream
-    const baseUrl = API_BASE || "";
+    const baseUrl = getApiBase();
     const es = new EventSource(`${baseUrl}/api/realtime/stream`);
     eventSourceRef.current = es;
 
