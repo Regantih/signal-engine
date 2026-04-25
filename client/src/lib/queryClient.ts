@@ -1,13 +1,14 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// window.__API_BASE__ is set in index.html as "__PORT_5000__".
-// deploy_website rewrites __PORT_5000__ to the backend proxy path at deploy time.
-// In local dev the script sets it to the literal "__PORT_5000__" string which
-// we treat as empty (relative URLs work fine locally).
+// getApiBase() is called lazily per-request so window.__API_BASE__ is always
+// read after the inline script in index.html has executed.
+// deploy_website rewrites __PORT_5000__ → absolute backend proxy URL at deploy time.
+// In local dev the inline script falls through to "", so relative URLs are used.
 declare const __PORT_5000__: string;
-const API_BASE = (typeof window !== "undefined" && (window as any).__API_BASE__ && (window as any).__API_BASE__ !== "__PORT_5000__")
-  ? (window as any).__API_BASE__
-  : "";
+function getApiBase(): string {
+  const base = (typeof window !== "undefined") ? (window as any).__API_BASE__ : "";
+  return (base && base !== "__PORT_5000__") ? base : "";
+}
 
 // Module-level auth token (not localStorage — blocked in sandboxed iframe)
 let authToken: string | null = null;
@@ -27,7 +28,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(`${getApiBase()}${url}`, {
     method,
     headers: {
       ...(data ? { "Content-Type": "application/json" } : {}),
@@ -47,7 +48,7 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey.join("/").replace(/\/\/+/g, "/");
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${getApiBase()}${path}`, {
       headers: {
         ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {}),
       },
