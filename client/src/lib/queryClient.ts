@@ -1,6 +1,8 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = ".";
+// __PORT_5000__ is rewritten by deploy_website to the backend proxy path.
+// In local dev this resolves to an empty string (relative URLs).
+const API_BASE = typeof __PORT_5000__ !== "undefined" ? __PORT_5000__ : "";
 
 // Module-level auth token (not localStorage — blocked in sandboxed iframe)
 let authToken: string | null = null;

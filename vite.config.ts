@@ -4,6 +4,11 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // Placeholder replaced by deploy_website with the backend proxy base URL.
+    // Falls back to empty string in local dev (relative API calls work fine).
+    __PORT_5000__: JSON.stringify(""),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

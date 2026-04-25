@@ -247,7 +247,7 @@ export async function qualityValueScreener(): Promise<ScreenerHit[]> {
   console.log("[screener] Running qualityValueScreener...");
   const resp = callFinanceTool("finance_quotes", {
     ticker_symbols: QUALITY_WATCHLIST,
-    fields: ["price", "pe", "marketCap", "name"],
+    fields: ["price", "pe", "marketCap"],
   });
 
   if (!resp?.content) return [];
@@ -338,7 +338,7 @@ export async function analystConsensusScreener(): Promise<ScreenerHit[]> {
     // Get current price from a separate quote call
     const quoteResp = callFinanceTool("finance_quotes", {
       ticker_symbols: [ticker],
-      fields: ["price", "name"],
+      fields: ["price"],
     });
 
     let currentPrice = 0;
@@ -464,7 +464,7 @@ export async function insiderBuyingScreener(): Promise<ScreenerHit[]> {
     // Get current price
     const quoteResp = callFinanceTool("finance_quotes", {
       ticker_symbols: [ticker],
-      fields: ["price", "name"],
+      fields: ["price"],
     });
     let currentPrice = 0;
     let name = ticker;
