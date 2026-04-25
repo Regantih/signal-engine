@@ -1,10 +1,11 @@
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
+import { queryClient, setAuthToken, getApiBase } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
+import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
@@ -41,6 +42,29 @@ function AppRouter() {
 }
 
 function App() {
+  // Auto-login on startup — the app has a single shared password.
+  // The JWT is stored in module memory (not localStorage, which is blocked).
+  useEffect(() => {
+    (async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: "SignalEngine2026!" }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAuthToken(data.token);
+          // Refetch any cached queries now that we have a token
+          queryClient.invalidateQueries();
+        }
+      } catch (e) {
+        console.error("Auto-login failed:", e);
+      }
+    })();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

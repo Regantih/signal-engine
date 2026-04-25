@@ -5,7 +5,7 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 // deploy_website rewrites __PORT_5000__ → absolute backend proxy URL at deploy time.
 // In local dev the inline script falls through to "", so relative URLs are used.
 declare const __PORT_5000__: string;
-function getApiBase(): string {
+export function getApiBase(): string {
   const base = (typeof window !== "undefined") ? (window as any).__API_BASE__ : "";
   return (base && base !== "__PORT_5000__") ? base : "";
 }
